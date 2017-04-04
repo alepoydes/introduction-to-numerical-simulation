@@ -105,18 +105,16 @@ $$
 погрешность результата может быть много меньше погрешности аргумента.
 
 $$
-k(a^x)=x*(a^x)'/(a^x)=x(ln a)a^x/a^x=x\ln a.
+k(a^x)=x(a^x)'/(a^x)=x(ln a)a^x/a^x=x\ln a.
 $$
 
 Рассмотрим погрешность вычисления тригонометрических функций:
 
-$$
-k(\sin x)=|x(\sin x)'/(\sin x)|=|x\ctg x|,
-k(\cos x)=|x(\cos x)'/(\cos x)|=|x\tg x|,
-k(\tg x)=|x(\tg x)'/(\tg x)|=|x/\sin x/\cos x|,
-k(\ctg x)=|x(\ctg x)'/(\ctg x)|=|x/\sin x/\cos x|,
-k(\arctg x)=|x(\arctg x)'/(\arctg x)|=|x/(1+x^2)/\arctg x|.
-$$
+$$k(\sin x)=|x(\sin x)'/(\sin x)|=|x\,\mathrm{ctg}\,x|,$$
+$$k(\cos x)=|x(\cos x)'/(\cos x)|=|x\,\mathrm{ctg}\,x|,$$
+$$k(\mathrm{tg}\,x)=|x(\mathrm{tg}\,x)'/(\mathrm{tg}\,x)|=|x/\sin x/\cos x|,$$
+$$k(\mathrm{ctg}\, x)=|x(\mathrm{ctg}\,x)'/(\mathrm{ctg},x)|=|x/\sin x/\cos x|,$$
+$$k(\mathrm{arctg}\, x)=|x(\mathrm{arctg}\, x)'/(\mathrm{arctg}\,x)|=|x/(1+x^2)/\mathrm{arctg}\,x|.$$
 
 Результат вычисления тригонометрической функции может иметь 
 бесконечно большую погрешность, если значение функции обращается в нуль.
@@ -134,10 +132,10 @@ $$
 тогда их произведение равно
 
 $$
-xy=x_0y_0(1+\delta x)*(1+\delta y)=x_0y_0(1+\delta x+\delta y+\delta x\cdot\delta y),
+xy=x_0y_0(1+\delta x)(1+\delta y)=x_0y_0(1+\delta x+\delta y+\delta x\cdot\delta y),
 $$
 
-где слагаемым $\delta x\cdpt \delta y$ можно пренебречь, так как оно меньшего порядка,
+где слагаемым $\delta x\cdot\delta y$ можно пренебречь, так как оно меньшего порядка,
 чем $\delta x$ и $\delta y$.
 Из полученной формулы мы заключаем, что относительная погрешность 
 произведения равна сумме погрешностей аргументов $\delta x+\delta y$.
