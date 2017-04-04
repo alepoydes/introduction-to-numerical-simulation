@@ -4,7 +4,8 @@
 
 1. [Особенности работы с машинной арифметикой](theory/numbers.md)
 1. [Число обусловленности](theory/condition_number.md)
-1. [Методы вычисления элементарных функций. Часть 1.](theory/Computation%20of%20elementary%20functions.ipynb)
+1. [Методы вычисления функций: суммирование ряда](theory/Computation%20of%20elementary%20functions.md)
+1. [Интерполяционные многочлены](theory/interpolation.md)
 
 # Лабораторные работы
 
