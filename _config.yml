@@ -1,1 +1,7 @@
 theme: jekyll-theme-slate
+
+defaults:
+  -
+    site:
+      title: "Введение в численное моделирование"
+      description: ""
