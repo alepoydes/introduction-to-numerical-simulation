@@ -9,7 +9,7 @@
 
     <link rel="stylesheet" type="text/css" media="screen" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
 
-    <title>{{ site.title | default: site.github.repository_name }}</title>
+    <title>{{ page.my_site_title | default: site.github.repository_name }}</title>
 
     <script type="text/x-mathjax-config"> MathJax.Hub.Config({ TeX: { equationNumbers: { autoNumber: "all" } } }); </script>
     <script type="text/x-mathjax-config">
@@ -30,8 +30,7 @@
         <header class="inner">
           <a id="forkme_banner" href="{{ site.github.repository_url }}">Открыть на GitHub</a>
 
-          <h1 id="project_title">{{ site.title | default: site.github.repository_name }}</h1>
-          <!--<h2 id="project_tagline">{{ site.description | default: site.github.project_tagline }}</h2>-->
+          <h1 id="project_title">{{ page.my_site_title | default: site.github.repository_name }}</h1>
 
           {% if site.show_downloads %}
             <section id="downloads">
@@ -53,7 +52,7 @@
     <div id="footer_wrap" class="outer">
       <footer class="inner">
         {% if site.github.is_project_page %}
-        <p class="copyright"><a href="{{ site.github.owner_url }}">Лобанов И.С.</a> {{ site.title | default: site.github.repository_name }}</p>
+        <p class="copyright"><a href="{{ site.github.owner_url }}">Лобанов И.С.</a> {{ page.my_site_title | default: site.github.repository_name }}</p>
         {% endif %}
         <p>Создано с помощью <a href="https://pages.github.com">GitHub Pages</a></p>
       </footer>
