@@ -1,5 +1,7 @@
 # Вводный курс в математическое моделирование
 
+Для корректного отображения формул, откройте сайт на [GitHub pages](https://alepoydes.github.io/introduction-to-numerical-simulation/).
+
 ## Лекции
 
 1. [Особенности работы с машинной арифметикой](theory/numbers.md)
