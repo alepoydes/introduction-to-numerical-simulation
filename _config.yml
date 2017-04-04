@@ -1,8 +1,1 @@
 theme: jekyll-theme-slate
-
-defaults:
-  -
-    scope:
-      path: ""
-    values:
-      my_site_title: "Введение в численное моделирование"
