@@ -14,3 +14,4 @@
 1. [Вот что значит "плохое" среднее](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/What%20does%20mean%20mean%20mean.ipynb)
 1. [Вычисление элементарных функций](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Not%20so%20elementary%20elementary%20functions.ipynb)
 1. [Численное решение дифференциальных уравнений](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integrators.ipynb)
+1. [Нейронные сети. Алгоритм word2vec](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/word2vec.ipynb)
