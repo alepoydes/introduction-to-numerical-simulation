@@ -7,8 +7,8 @@ from vispy import app
 class Surface(object):
     def __init__(self, size=(100,100), nwave=5):
         self._size=size
-        self._wave_vector=5*np.random.randn(nwave,2)
-        self._angular_frequency=np.random.randn(nwave)
+        self._wave_vector=5*(2*np.random.rand(nwave,2)-1)
+        self._angular_frequency=5*np.random.rand(nwave)
         self._phase=2*np.pi*np.random.rand(nwave)
         self._amplitude=np.random.rand(nwave)/nwave
     def position(self):
@@ -85,8 +85,8 @@ void main (void) {
     # Считаем косинус угла между нормалью к поверхностью
     # и направлением на источник света
     """
-    vec3 normal=normalize(vec3(a_normal, 1));
-    v_directed_light=max(0,dot(normal, u_sun_direction));
+    vec3 normal=normalize(vec3(a_normal, -1));
+    v_directed_light=max(0,-dot(normal, u_sun_direction));
 
     float z=(1-a_height)*0.5;
 """
@@ -128,12 +128,12 @@ class Canvas(app.Canvas):
         self.surface=Surface()
         self.program["a_position"]=self.surface.position()
         # Устанавливаем направление на Солнце
-        sun=np.array([0,0,1],dtype=np.float32) 
+        sun=np.array([1,0,1],dtype=np.float32) 
         sun/=np.linalg.norm(sun)
         self.program["u_sun_direction"]=sun
         # Устанавливаем цвета рассеянного света и Солнца
-        self.program["u_sun_color"]=np.array([0.8,0.8,0],dtype=np.float32) 
-        self.program["u_ambient_color"]=np.array([0.2,0.2,0.5],dtype=np.float32) 
+        self.program["u_sun_color"]=np.array([0.7,0.7,0],dtype=np.float32) 
+        self.program["u_ambient_color"]=np.array([0.1,0.1,0.5],dtype=np.float32) 
         self.triangles=gloo.IndexBuffer(self.surface.triangulation())
         self.t=0
         self._timer = app.Timer('auto', connect=self.on_timer, start=True)
