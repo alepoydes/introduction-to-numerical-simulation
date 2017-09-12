@@ -94,7 +94,7 @@ void main (void) {
     # то нужно установить правильное значение координаты z.
     # Не забываем, что все координаты будут поделены на последнюю.
 """
-    gl_Position = vec4(a_position.xy,z*z,z);
+    gl_Position = vec4(a_position.xy,a_height*z,z);
 }
 """)
 
@@ -113,7 +113,6 @@ void main() {
     # Цвет получаем суммирование рассянного и направленого света,
     # если яркость слишком большая, просто отсекаем лишнее.
     """
-    //vec3 rgb=vec3(v_directed_light,0.0,0.0);
     vec3 rgb=clamp(u_sun_color*v_directed_light+u_ambient_color,0.0,1.0);
     gl_FragColor = vec4(rgb,1);
 }
