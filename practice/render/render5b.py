@@ -108,7 +108,7 @@ void main() {
 """
     # Яркость блико от Солнца.
 """
-    float directed_light=pow(max(0,-dot(u_sun_direction, reflected)),3);
+    float directed_light=pow(max(0,-dot(u_sun_direction, reflected)),16);
     vec3 rgb=clamp(u_sun_color*directed_light+u_ambient_color,0.0,1.0);
     gl_FragColor = vec4(rgb,1);
 }
