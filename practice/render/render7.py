@@ -100,7 +100,6 @@ class Canvas(app.Canvas):
         self.program["u_alpha"]=0.9;
         self.program["u_bed_depth"]=1;
         self.triangles=gloo.IndexBuffer(self.surface.triangulation())
-        self.t=0
         self.are_points_visible=False
         self._timer = app.Timer('auto', connect=self.on_timer, start=True)
         self.activate_zoom()
@@ -113,9 +112,9 @@ class Canvas(app.Canvas):
     def on_draw(self, event):
         gloo.set_state(clear_color=(0,0,0,1), blend=False)
         gloo.clear()
-        h=self.surface.height(self.t)
+        h,grad=self.surface.height_and_normal()
         self.program["a_height"]=h
-        self.program["a_normal"]=self.surface.normal(self.t)
+        self.program["a_normal"]=grad
         gloo.set_state(depth_test=True)
         self.program.draw('triangles', self.triangles)
         if self.are_points_visible:
@@ -124,7 +123,7 @@ class Canvas(app.Canvas):
             self.program_point.draw('points')
 
     def on_timer(self, event):
-        self.t+=0.01
+        self.surface.propagate(0.01)
         self.update()        
 
     def on_resize(self, event):

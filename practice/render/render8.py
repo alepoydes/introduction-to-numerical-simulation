@@ -135,7 +135,6 @@ class Canvas(app.Canvas):
         self.program["u_sun_diffused_color"]=[1,1,0.5];
         self.program["u_sun_reflected_color"]=[1,0.5,0];
         self.triangles=gloo.IndexBuffer(self.surface.triangulation())
-        self.t=0
         # Set up GUI
         self.camera=np.array([0,0,1])
         self.up=np.array([0,1,0])
@@ -183,9 +182,9 @@ class Canvas(app.Canvas):
     def on_draw(self, event):
         gloo.set_state(clear_color=(0,0,0,1), blend=False)
         gloo.clear()
-        h=self.surface.height(self.t)
+        h,grad=self.surface.height_and_normal()
         self.program["a_height"]=h
-        self.program["a_normal"]=self.surface.normal(self.t)
+        self.program["a_normal"]=grad
         gloo.set_state(depth_test=True)
         self.program.draw('triangles', self.triangles)
         if self.are_points_visible:
@@ -194,7 +193,7 @@ class Canvas(app.Canvas):
             self.program_point.draw('points')
 
     def on_timer(self, event):
-        self.t+=0.01
+        self.surface.propagate(0.01)
         self.update()        
 
     def on_resize(self, event):
