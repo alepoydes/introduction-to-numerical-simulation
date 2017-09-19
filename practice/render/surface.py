@@ -44,5 +44,26 @@ class PlaneWaves(object):
         acd=np.concatenate((a_l[...,None],c_l[...,None],d_l[...,None]),axis=-1)
         return np.concatenate((abc,acd),axis=0).astype(np.uint32)
 
+class CircularWaves(PlaneWaves):
+    def __init__(self, size=(100,100), max_height=0.1, wave_length=0.3, center=(0.,0.), speed=3):
+        self._size=size
+        self._amplitude=max_height
+        self._omega=2*np.pi/wave_length
+        self._center=np.asarray(center, dtype=np.float32)
+        self._speed=speed
+        self.t=0
+    def height_and_normal(self):
+        x=np.linspace(-1,1,self._size[0])[:,None]
+        y=np.linspace(-1,1,self._size[1])[None,:]
+        z=np.empty(self._size,dtype=np.float32)
+        grad=np.zeros(self._size+(2,),dtype=np.float32)
+        d=np.sqrt((x-self._center[0])**2+(y-self._center[1])**2)
+        arg=self._omega*d-self.t*self._speed
+        z[:,:]=self._amplitude*np.cos(arg)
+        dcos=-self._amplitude*self._omega*np.sin(arg)
+        grad[:,:,0]+=(x-self._center[0])*dcos/d
+        grad[:,:,1]+=(y-self._center[1])*dcos/d
+        return z, grad
+        
 class Surface(PlaneWaves):
     pass

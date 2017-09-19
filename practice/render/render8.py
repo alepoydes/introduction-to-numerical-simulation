@@ -3,7 +3,7 @@
 import numpy as np
 from vispy import gloo, app, io
 
-from surface import Surface
+from surface import *
 
 VS = ("""
 #version 120
@@ -68,6 +68,7 @@ uniform vec3 u_sun_direction;
 uniform vec3 u_sun_diffused_color;
 uniform vec3 u_sun_reflected_color;
 
+uniform float u_reflected_mult;
 uniform float u_diffused_mult;
 uniform float u_bed_mult;
 uniform float u_depth_mult;
@@ -87,12 +88,14 @@ void main() {
 
     vec3 normal=normalize(v_normal);
     float diffused_intensity=u_diffused_mult*max(0, -dot(normal, u_sun_direction));
+    float cosphi=max(0,dot(u_sun_direction,normalize(v_reflected)));
+    float reflected_intensity=u_reflected_mult*pow(cosphi,100);
 
     vec3 ambient_water=vec3(0,0.3,0.5);
     vec3 image_color=u_bed_mult*bed_color*v_mask+u_depth_mult*ambient_water*(1-v_mask);
 
     vec3 rgb=u_sky_mult*sky_color*v_reflectance+image_color*(1-v_reflectance)
-        +diffused_intensity*u_sun_diffused_color;
+        +diffused_intensity*u_sun_diffused_color+reflected_intensity*u_sun_reflected_color;
     gl_FragColor.rgb = clamp(rgb,0.0,1.0);
     gl_FragColor.a = 1;
 }
@@ -129,11 +132,11 @@ class Canvas(app.Canvas):
         self.program['u_sky_texture']=gloo.Texture2D(self.sky, wrapping='repeat', interpolation='linear')
         self.program['u_bed_texture']=gloo.Texture2D(self.bed, wrapping='repeat', interpolation='linear')
         self.program_point["u_eye_height"]=self.program["u_eye_height"]=3;
-        self.program["u_alpha"]=0.7;
-        self.program["u_bed_depth"]=2;
-        self.program["u_sun_direction"]=normalize([0,1,1]);
-        self.program["u_sun_diffused_color"]=[1,1,0.5];
-        self.program["u_sun_reflected_color"]=[1,0.5,0];
+        self.program["u_alpha"]=0.9;
+        self.program["u_bed_depth"]=1;
+        self.program["u_sun_direction"]=normalize([0,1,0.1]);
+        self.program["u_sun_diffused_color"]=[1,0.8,1];
+        self.program["u_sun_reflected_color"]=[1,0.8,0.6];
         self.triangles=gloo.IndexBuffer(self.surface.triangulation())
         # Set up GUI
         self.camera=np.array([0,0,1])
@@ -142,6 +145,7 @@ class Canvas(app.Canvas):
         self.are_points_visible=False
         self.drag_start=None
         self.diffused_flag=True;
+        self.reflected_flag=True;
         self.bed_flag=True;
         self.depth_flag=True;
         self.sky_flag=True;
@@ -153,6 +157,7 @@ class Canvas(app.Canvas):
 
     def apply_flags(self):
         self.program["u_diffused_mult"]=0.5 if self.diffused_flag else 0;
+        self.program["u_reflected_mult"]=1.0 if self.reflected_flag else 0;
         self.program["u_bed_mult"]=1 if self.bed_flag else 0;
         self.program["u_depth_mult"]=1 if self.depth_flag else 0;
         self.program["u_sky_mult"]=1 if self.sky_flag else 0;
@@ -220,6 +225,10 @@ class Canvas(app.Canvas):
             self.sky_flag=not self.sky_flag; 
             print("Show reflected image of sky:",self.sky_flag)
             self.apply_flags();
+        elif event.key=='5': 
+            self.reflected_flag=not self.reflected_flag; 
+            print("Show reflected image of sun:",self.reflected_flag)
+            self.apply_flags();
 
     def screen_to_gl_coordinates(self, pos):
         return 2*np.array(pos)/np.array(self.size)-1
@@ -239,6 +248,8 @@ class Canvas(app.Canvas):
         self.drag_start=None
 
 if __name__ == '__main__':
-    c = Canvas(Surface(size=(100,100), nwave=5, max_height=0.2))
+    # surface=Surface(size=(100,100), nwave=5, max_height=0.2)
+    surface=CircularWaves(size=(100,100), max_height=0.01)
+    c = Canvas(surface)
     c.measure_fps()
     app.run()
