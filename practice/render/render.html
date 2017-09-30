@@ -1,0 +1,273 @@
+<html>
+    
+<head>
+<title>Rendering water surface</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+
+<script id="vs" type="x-shader/x-vertex">
+uniform float u_eye_height;
+uniform mat4 u_world_view;
+uniform float u_alpha;
+uniform float u_bed_depth;
+
+attribute vec2 a_position;
+attribute float a_height;
+attribute vec2 a_normal;
+
+varying vec3 v_normal;
+varying vec3 v_position;
+varying vec3 v_reflected;
+varying vec2 v_sky_texcoord;
+varying vec2 v_bed_texcoord;
+varying float v_reflectance;
+varying vec3 v_mask;
+
+void main (void) {
+    v_position=vec3(a_position.xy,a_height);
+    v_normal=normalize(vec3(a_normal, -1.0));
+
+    vec4 position_view=u_world_view*vec4(v_position,1);
+    float z=1.0-(1.0+position_view.z)/(1.0+u_eye_height);
+    gl_Position=vec4(position_view.xy,-position_view.z*z,z);
+
+    vec4 eye_view=vec4(0.0,0.0,u_eye_height,1.0);
+    vec4 eye=eye_view*u_world_view;
+    vec3 from_eye=normalize(v_position-eye.xyz);
+    vec3 normal=normalize(-v_normal);
+    v_reflected=normalize(from_eye-2.0*normal*dot(normal,from_eye));
+    v_sky_texcoord=0.05*v_reflected.xy/v_reflected.z+vec2(0.5,0.5);
+
+    vec3 cr=cross(normal,from_eye);
+    float d=1.0-u_alpha*u_alpha*dot(cr,cr);
+    float c2=sqrt(d);
+    vec3 refracted=normalize(u_alpha*cross(cr,normal)-normal*c2);
+    float c1=-dot(normal,from_eye);
+
+    float t=(-u_bed_depth-v_position.z)/refracted.z;
+    vec3 point_on_bed=v_position+t*refracted;
+    v_bed_texcoord=point_on_bed.xy+vec2(0.5,0.5);
+
+    float reflectance_s=pow((u_alpha*c1-c2)/(u_alpha*c1+c2),2.0);
+    float reflectance_p=pow((u_alpha*c2-c1)/(u_alpha*c2+c1),2.0);
+    v_reflectance=(reflectance_s+reflectance_p)/2.0;
+
+    float diw=length(point_on_bed-v_position);
+    vec3 filter=vec3(1.0,0.5,0.2);
+    v_mask=vec3(exp(-diw*filter.x),exp(-diw*filter.y),exp(-diw*filter.z));
+}
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+uniform sampler2D u_sky_texture;
+uniform sampler2D u_bed_texture;
+uniform highp vec3 u_sun_direction;
+uniform highp vec3 u_sun_diffused_color;
+uniform highp vec3 u_sun_reflected_color;
+
+uniform highp float u_reflected_mult;
+uniform highp float u_diffused_mult;
+uniform highp float u_bed_mult;
+uniform highp float u_depth_mult;
+uniform highp float u_sky_mult;
+
+varying highp vec3 v_normal;
+varying highp vec3 v_position;
+varying highp vec3 v_reflected;
+varying highp vec2 v_sky_texcoord;
+varying highp vec2 v_bed_texcoord;
+varying highp float v_reflectance;
+varying highp vec3 v_mask;
+
+void main() {
+    highp vec3 sky_color=texture2D(u_sky_texture, v_sky_texcoord).rgb;
+    highp vec3 bed_color=texture2D(u_bed_texture, v_bed_texcoord).rgb;
+
+    highp vec3 normal=normalize(v_normal);
+    highp float diffused_intensity=u_diffused_mult*max(-dot(normal, u_sun_direction), 0.0);
+    highp float cosphi=max(dot(u_sun_direction,normalize(v_reflected)), 0.0);
+    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
+
+    highp vec3 ambient_water=vec3(0.0,0.3,0.5);
+    highp vec3 image_color=u_bed_mult*bed_color*v_mask+u_depth_mult*ambient_water*(1.0-v_mask);
+
+    highp vec3 rgb=u_sky_mult*sky_color*v_reflectance+image_color*(1.0-v_reflectance)
+        +diffused_intensity*u_sun_diffused_color+reflected_intensity*u_sun_reflected_color;
+    gl_FragColor.rgb = clamp(rgb,0.0,1.0);
+    gl_FragColor.a = 1.0;
+}
+</script>
+
+<script type="text/javascript">
+    
+var gl;
+
+function initGL(canvas) {
+    try {
+        gl = canvas.getContext("webgl");
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+    } catch (e) {
+    }
+    if (!gl) {
+        alert("Could not initialise WebGL, sorry :-(");
+    }
+}
+
+function getShader(id) {
+    var shaderScript = document.getElementById(id);
+    if (!shaderScript) {
+        return null;
+    }
+
+    var str = "";
+    var k = shaderScript.firstChild;
+    while (k) {
+        if (k.nodeType == 3) {
+            str += k.textContent;
+        }
+        k = k.nextSibling;
+    }
+
+    var shader;
+    if (shaderScript.type == "x-shader/x-fragment") {
+        shader = gl.createShader(gl.FRAGMENT_SHADER);
+    } else if (shaderScript.type == "x-shader/x-vertex") {
+        shader = gl.createShader(gl.VERTEX_SHADER);
+    } else {
+        return null;
+    }
+
+    gl.shaderSource(shader, str);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        alert(gl.getShaderInfoLog(shader));
+        return null;
+    }
+    return shader;
+}
+
+var shaderProgram;
+function initShaders() {
+    var fragmentShader = getShader("vs");
+    var vertexShader = getShader("fs");
+
+    shaderProgram = gl.createProgram();
+    gl.attachShader(shaderProgram, vertexShader);
+    gl.attachShader(shaderProgram, fragmentShader);
+    gl.linkProgram(shaderProgram);
+
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+
+    gl.useProgram(shaderProgram);
+
+    shaderProgram.positionAttribute = gl.getAttribLocation(shaderProgram, "a_position");
+    gl.enableVertexAttribArray(shaderProgram.positionAttribute);
+
+    shaderProgram.heightAttribute = gl.getAttribLocation(shaderProgram, "a_height");
+    gl.enableVertexAttribArray(shaderProgram.heightAttribute);
+
+    shaderProgram.normalAttribute = gl.getAttribLocation(shaderProgram, "a_normal");
+    gl.enableVertexAttribArray(shaderProgram.normalAttribute);
+
+    shaderProgram.eyeHeightUniform = gl.getUniformLocation(shaderProgram, "u_eye_height");
+    shaderProgram.worldViewUniform = gl.getUniformLocation(shaderProgram, "u_world_view");
+    shaderProgram.alphaUniform = gl.getUniformLocation(shaderProgram, "u_alpha");
+    shaderProgram.bedDepthUniform = gl.getUniformLocation(shaderProgram, "u_bed_depth");
+
+    shaderProgram.skyTextureUniform = gl.getUniformLocation(shaderProgram, "u_sky_texture");
+    shaderProgram.bedTextureUniform = gl.getUniformLocation(shaderProgram, "u_bed_texture");
+    shaderProgram.sunDirectionUniform = gl.getUniformLocation(shaderProgram, "u_sun_direction");
+    shaderProgram.sunDiffusedColorUniform = gl.getUniformLocation(shaderProgram, "u_sun_diffused_color");
+    shaderProgram.sunReflectedColorUniform = gl.getUniformLocation(shaderProgram, "u_sun_reflected_color");
+    shaderProgram.reflectedMultUniform = gl.getUniformLocation(shaderProgram, "u_reflected_mult");
+    shaderProgram.diffusedMultUniform = gl.getUniformLocation(shaderProgram, "u_diffused_mult");
+    shaderProgram.bedMultUniform = gl.getUniformLocation(shaderProgram, "u_bed_mult");
+    shaderProgram.depthMultUniform = gl.getUniformLocation(shaderProgram, "u_depth_mult");
+    shaderProgram.skyMultUniform = gl.getUniformLocation(shaderProgram, "u_sky_mult");
+}
+
+function initBuffers() {
+}
+
+function handleLoadedTexture(texture) {
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+}
+
+var skyTexture;
+var bedTexture;
+function initTextures() {
+    skyTexture = gl.createTexture();
+    skyTexture.image = new Image();
+    skyTexture.image.onload = function () {
+        handleLoadedTexture(skyTexture)
+    };
+    skyTexture.image.src = "fluffy_clouds.png";
+
+    bedTexture = gl.createTexture();
+    bedTexture.image = new Image();
+    bedTexture.image.onload = function () {
+        handleLoadedTexture(bedTexture)
+    };
+    bedTexture.image.src = "seabed.png";    
+}
+
+
+function drawScene() {
+    gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+}
+
+var lastTime = 0;
+function animate() {
+    var timeNow = new Date().getTime();
+    if (lastTime != 0) {
+        var elapsed = timeNow - lastTime;
+    }
+    lastTime = timeNow;
+}
+
+function tick() {
+    requestAnimFrame(tick);
+    drawScene();
+    animate();
+}
+
+function webGLStart() {
+    var canvas = document.getElementById("render-canvas");
+    initGL(canvas);
+    initShaders();
+    initBuffers();
+    initTextures();
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.enable(gl.DEPTH_TEST);
+
+    tick();
+}
+
+</script>
+</head>
+
+
+<body onload="webGLStart();">
+    <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
+    
+    <canvas id="render-canvas" style="border: none;" width="500" height="500"></canvas>
+    <br/>
+    <br/>
+
+    <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
+</body>
+
+</html>
+    
