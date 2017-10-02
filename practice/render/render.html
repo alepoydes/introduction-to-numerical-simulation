@@ -100,9 +100,19 @@ void main() {
 </script>
 
 <script type="text/javascript">
-    
-var gl;
 
+function normalize(v) {
+    l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+    return [v[0]/l, v[1]/l, v[2]/l];
+}
+
+function cross(a,b) {
+    return [a[1]*b[2]-a[2]*b[1]
+          ,a[2]*b[0]-a[0]*b[2]
+          ,a[0]*b[1]-a[1]*b[0]]
+}
+
+var gl;
 function initGL(canvas) {
     try {
         gl = canvas.getContext("webgl");
@@ -117,28 +127,19 @@ function initGL(canvas) {
 
 function getShader(id) {
     var shaderScript = document.getElementById(id);
-    if (!shaderScript) {
-        return null;
-    }
-
+    if (!shaderScript) { return null; }
     var str = "";
     var k = shaderScript.firstChild;
     while (k) {
-        if (k.nodeType == 3) {
-            str += k.textContent;
-        }
+        if (k.nodeType == 3) { str += k.textContent; }
         k = k.nextSibling;
     }
-
     var shader;
     if (shaderScript.type == "x-shader/x-fragment") {
         shader = gl.createShader(gl.FRAGMENT_SHADER);
     } else if (shaderScript.type == "x-shader/x-vertex") {
         shader = gl.createShader(gl.VERTEX_SHADER);
-    } else {
-        return null;
-    }
-
+    } else { return null; }
     gl.shaderSource(shader, str);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -164,14 +165,14 @@ function initShaders() {
 
     gl.useProgram(shaderProgram);
 
-    shaderProgram.positionAttribute = gl.getAttribLocation(shaderProgram, "a_position");
-    gl.enableVertexAttribArray(shaderProgram.positionAttribute);
+    shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "a_position");
+    gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
 
-    shaderProgram.heightAttribute = gl.getAttribLocation(shaderProgram, "a_height");
-    gl.enableVertexAttribArray(shaderProgram.heightAttribute);
+    shaderProgram.vertexHeightAttribute = gl.getAttribLocation(shaderProgram, "a_height");
+    gl.enableVertexAttribArray(shaderProgram.vertexHeightAttribute);
 
-    shaderProgram.normalAttribute = gl.getAttribLocation(shaderProgram, "a_normal");
-    gl.enableVertexAttribArray(shaderProgram.normalAttribute);
+    shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "a_normal");
+    gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
 
     shaderProgram.eyeHeightUniform = gl.getUniformLocation(shaderProgram, "u_eye_height");
     shaderProgram.worldViewUniform = gl.getUniformLocation(shaderProgram, "u_world_view");
@@ -190,7 +191,57 @@ function initShaders() {
     shaderProgram.skyMultUniform = gl.getUniformLocation(shaderProgram, "u_sky_mult");
 }
 
+var vertexIndexBuffer;
+var vertexPositionBuffer;
+var vertexHeightBuffer;
+var vertexNormalBuffer;
+
+var vertexHeightData;
+var vertexNormalData;
+var nx=100;
+var ny=100;
 function initBuffers() {
+    vertexHeightData=new Float32Array(nx*ny);
+    vertexNormalData=new Float32Array(nx*ny*2);
+
+    var vertexPositionData=new Float32Array(nx*ny*2);
+    var vertexIndicesData = new Uint16Array((nx-1)*(ny-1)*6);
+    for(var x=0; x<nx; x++) for(var y=0; y<ny; y++) {
+        vertexPositionData[0+2*(y+x*ny)]=2*x/(nx-1)-1;
+        vertexPositionData[1+2*(y+x*ny)]=2*y/(ny-1)-1;
+    };
+    for(var x=0; x<nx-1; x++) for(var y=0; y<ny-1; y++) {
+        vertexIndicesData[0+6*(y+x*(ny-1))]=y+x*ny;
+        vertexIndicesData[1+6*(y+x*(ny-1))]=y+(x+1)*ny;
+        vertexIndicesData[2+6*(y+x*(ny-1))]=(y+1)+(x+1)*ny;
+        vertexIndicesData[3+6*(y+x*(ny-1))]=(y+1)+x*ny;
+        vertexIndicesData[4+6*(y+x*(ny-1))]=y+x*ny;
+        vertexIndicesData[5+6*(y+x*(ny-1))]=(y+1)+(x+1)*ny;
+    };
+
+    vertexPositionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexPositionData, gl.STATIC_DRAW);
+    vertexPositionBuffer.itemSize = 2;
+    vertexPositionBuffer.numItems = nx*ny;
+
+    vertexIndexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, vertexIndicesData, gl.STATIC_DRAW);
+    vertexIndexBuffer.itemSize = 1;
+    vertexIndexBuffer.numItems = 6*(nx-1)*(ny-1);
+
+    vertexNormalBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexNormalData, gl.DYNAMIC_DRAW);
+    vertexNormalBuffer.itemSize = 2;
+    vertexNormalBuffer.numItems = nx*ny;
+
+    vertexHeightBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexHeightBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexHeightData, gl.DYNAMIC_DRAW);
+    vertexHeightBuffer.itemSize = 1;
+    vertexHeightBuffer.numItems = nx*ny;
 }
 
 function handleLoadedTexture(texture) {
@@ -221,10 +272,67 @@ function initTextures() {
     bedTexture.image.src = "seabed.png";    
 }
 
+function ifEnabled(name, value) {
+    return document.getElementById(name).checked?value:0.0;
+}
 
 function drawScene() {
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.uniform1f(shaderProgram.eyeHeightUniform, 3.0);
+    gl.uniform1f(shaderProgram.alphaUniform, 0.9);
+    gl.uniform1f(shaderProgram.bedDepthUniform, 1.0);
+    gl.uniform3fv(shaderProgram.sunDirectionUniform, normalize([1.0, 0.0, 0.1]));
+    gl.uniform3f(shaderProgram.sunDiffusedColorUniform, 1.0, 0.8, 1.0);
+    gl.uniform3f(shaderProgram.sunReflectedColorUniform, 1.0, 0.8, 0.6);
+    
+    gl.uniform1f(shaderProgram.reflectedMultUniform, ifEnabled("reflected_flag",1.0));
+    gl.uniform1f(shaderProgram.diffusedMultUniform, ifEnabled("diffused_flag",0.5));
+    gl.uniform1f(shaderProgram.bedMultUniform, ifEnabled("bed_flag",1.0));
+    gl.uniform1f(shaderProgram.depthMultUniform, ifEnabled("depth_flag",1.0));
+    gl.uniform1f(shaderProgram.skyMultUniform, ifEnabled("sky_flag",1.0));
+
+    setMatrices();
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, skyTexture);
+    gl.uniform1i(shaderProgram.skyTextureUniform, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, bedTexture);
+    gl.uniform1i(shaderProgram.bedTextureUniform, 1);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer);
+    gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, vertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer);
+    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexHeightBuffer);
+    gl.vertexAttribPointer(shaderProgram.vertexHeightAttribute, vertexHeightBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, vertexIndexBuffer);
+    gl.drawElements(gl.TRIANGLES, vertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+}
+
+function computeHeight(time) {
+    var amplitude=0.03;
+    var wave_length=0.3;
+    var speed=0.003;
+
+    var omega=2*Math.PI/wave_length;
+    for(var x=0; x<nx; x++) for(var y=0; y<ny; y++) {
+        var idx=x*ny+y;
+        var posX=2*x/(nx-1)-1;
+        var posY=2*y/(ny-1)-1;
+        var d=Math.sqrt(posX*posX+posY*posY);
+        var arg=omega*d-time*speed;
+        vertexHeightData[idx]=amplitude*Math.cos(arg);
+        var dcos=-amplitude*omega*Math.sin(arg)/d;
+        vertexNormalData[2*idx]=posX*dcos;
+        vertexNormalData[2*idx+1]=posY*dcos;
+    };
 }
 
 var lastTime = 0;
@@ -234,6 +342,12 @@ function animate() {
         var elapsed = timeNow - lastTime;
     }
     lastTime = timeNow;
+    
+    computeHeight(timeNow);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexNormalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexNormalData, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexHeightBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexHeightData, gl.DYNAMIC_DRAW);
 }
 
 function tick() {
@@ -242,15 +356,47 @@ function tick() {
     animate();
 }
 
+var camera;
+var up;
+function initCamera() {
+    camera=[0.0, 0.0, 1.0];
+    up=[0.0, 1.0, 0.0];
+}
+
+function setMatrices() {
+    var right=cross(up, camera);
+    gl.uniformMatrix4fv(shaderProgram.worldViewUniform, false, 
+        [right[0], up[0], camera[0], 0.0
+        ,right[1], up[1], camera[1], 0.0
+        ,right[2], up[2], camera[2], 0.0
+        ,0.0, 0.0, 0.0, 1.0]);
+}
+
+function onMove(event) {
+    if(event.buttons==0) return;
+    var dx=event.movementX/canvas.width;
+    var dy=event.movementY/canvas.height;
+    var right=cross(up,camera)
+    var new_camera=[camera[0]-right[0]*dx+up[0]*dy,camera[1]-right[1]*dx+up[1]*dy,camera[2]-right[2]*dx+up[2]*dy];
+    var new_up=[up[0]-camera[0]*dx,up[1]-camera[1]*dx,up[2]-camera[2]*dx];
+    camera=normalize(new_camera)
+    up=normalize(new_up)
+    up=cross(camera,cross(up,camera));
+}
+
+var canvas;
 function webGLStart() {
-    var canvas = document.getElementById("render-canvas");
+    canvas = document.getElementById("render-canvas");
     initGL(canvas);
     initShaders();
     initBuffers();
     initTextures();
+    initCamera();
 
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.enable(gl.DEPTH_TEST);
+
+    canvas.addEventListener("mousemove", onMove);
 
     tick();
 }
@@ -264,6 +410,11 @@ function webGLStart() {
     
     <canvas id="render-canvas" style="border: none;" width="500" height="500"></canvas>
     <br/>
+    <input type="checkbox" id="diffused_flag" checked />Sun diffused light
+    <input type="checkbox" id="reflected_flag" checked />Sun feflected light<br/>
+    <input type="checkbox" id="sky_flag" checked />Reflected image of sky
+    <input type="checkbox" id="bed_flag" checked />Refracted image of seabed<br/>
+    <input type="checkbox" id="depth_flag" checked />Ambient light in water<br/>
     <br/>
 
     <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
