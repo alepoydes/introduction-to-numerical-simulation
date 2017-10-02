@@ -39,11 +39,10 @@ void main (void) {
     v_reflected=normalize(from_eye-2.0*normal*dot(normal,from_eye));
     v_sky_texcoord=0.05*v_reflected.xy/v_reflected.z+vec2(0.5,0.5);
 
-    vec3 cr=cross(normal,from_eye);
-    float d=1.0-u_alpha*u_alpha*dot(cr,cr);
-    float c2=sqrt(d);
-    vec3 refracted=normalize(u_alpha*cross(cr,normal)-normal*c2);
-    float c1=-dot(normal,from_eye);
+    float c1=dot(normal,from_eye);
+    float k=1.0-u_alpha*u_alpha*(1.0-c1*c1);
+    vec3 refracted=normalize(u_alpha*from_eye-(u_alpha*c1+sqrt(k))*normal);
+    float c2=dot(refracted,normal);
 
     float t=(-u_bed_depth-v_position.z)/refracted.z;
     vec3 point_on_bed=v_position+t*refracted;
@@ -281,7 +280,7 @@ function drawScene() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.uniform1f(shaderProgram.eyeHeightUniform, 3.0);
-    gl.uniform1f(shaderProgram.alphaUniform, 0.9);
+    gl.uniform1f(shaderProgram.alphaUniform, 0.95);
     gl.uniform1f(shaderProgram.bedDepthUniform, 1.0);
     gl.uniform3fv(shaderProgram.sunDirectionUniform, normalize([1.0, 0.0, 0.1]));
     gl.uniform3f(shaderProgram.sunDiffusedColorUniform, 1.0, 0.8, 1.0);
@@ -417,6 +416,7 @@ function webGLStart() {
     <input type="checkbox" id="depth_flag" checked />Ambient light in water<br/>
     <br/>
 
+    Based on <a href="http://learningwebgl.com/blog/?page_id=1217">this tutorial</a><br/>
     <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
 </body>
 
