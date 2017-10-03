@@ -19,42 +19,82 @@ attribute vec2 a_normal;
 varying vec3 v_normal;
 varying vec3 v_position;
 varying vec3 v_reflected;
+varying vec3 v_refracted;
 varying vec2 v_sky_texcoord;
 varying vec2 v_bed_texcoord;
 varying float v_reflectance;
-varying vec3 v_mask;
+varying float v_path_in_water;
+varying float v_distance_to_eye;
+varying float v_c;
 
-void main (void) {
-    v_position=vec3(a_position.xy,a_height);
-    v_normal=normalize(vec3(a_normal, -1.0));
-
+vec4 to_clipspace(vec3 position) {
     vec4 position_view=u_world_view*vec4(v_position,1);
     float z=1.0-(1.0+position_view.z)/(1.0+u_eye_height);
-    gl_Position=vec4(position_view.xy,-position_view.z*z,z);
+    return vec4(position_view.xy,-position_view.z*z/2.0,z);
+}
 
+vec3 from_water_to_eye(vec3 position) {
     vec4 eye_view=vec4(0.0,0.0,u_eye_height,1.0);
     vec4 eye=eye_view*u_world_view;
-    vec3 from_eye=normalize(v_position-eye.xyz);
-    vec3 normal=normalize(-v_normal);
-    v_reflected=normalize(from_eye-2.0*normal*dot(normal,from_eye));
-    v_sky_texcoord=0.05*v_reflected.xy/v_reflected.z+vec2(0.5,0.5);
+    return position-eye.xyz;
+}
 
-    float c1=dot(normal,from_eye);
-    float k=1.0-u_alpha*u_alpha*(1.0-c1*c1);
-    vec3 refracted=normalize(u_alpha*from_eye-(u_alpha*c1+sqrt(k))*normal);
-    float c2=dot(refracted,normal);
+float reflection_refraction(in vec3 from_eye, in vec3 outer_normal, in float alpha, in float c1, 
+out vec3 reflected, out vec3 refracted) {
+    reflected=normalize(from_eye-2.0*outer_normal*c1);
+    float k=1.0-alpha*alpha*(1.0-c1*c1);
+    if(k<0.0) {
+        refracted=vec3(0.0,0.0,0.0);
+        return 1.0;    
+    };
+    refracted=normalize(alpha*from_eye-(alpha*c1+sqrt(k))*outer_normal);
+    float c2=dot(refracted,outer_normal);    
 
-    float t=(-u_bed_depth-v_position.z)/refracted.z;
-    vec3 point_on_bed=v_position+t*refracted;
-    v_bed_texcoord=point_on_bed.xy+vec2(0.5,0.5);
+    float reflectance_s=pow((alpha*c1-c2)/(alpha*c1+c2),2.0);
+    float reflectance_p=pow((alpha*c2-c1)/(alpha*c2+c1),2.0);
+    return (reflectance_s+reflectance_p)/2.0;
+}
 
-    float reflectance_s=pow((u_alpha*c1-c2)/(u_alpha*c1+c2),2.0);
-    float reflectance_p=pow((u_alpha*c2-c1)/(u_alpha*c2+c1),2.0);
-    v_reflectance=(reflectance_s+reflectance_p)/2.0;
+vec2 sky_texcoord(vec3 position, vec3 direction) {
+    return 0.05*direction.xy/direction.z+vec2(0.5,0.5);
+}
 
-    float diw=length(point_on_bed-v_position);
-    vec3 filter=vec3(1.0,0.5,0.2);
-    v_mask=vec3(exp(-diw*filter.x),exp(-diw*filter.y),exp(-diw*filter.z));
+vec3 bed_intersection(vec3 position, vec3 direction) {
+    float t=(-u_bed_depth-position.z)/direction.z;
+    return position+t*direction;
+}
+
+vec2 bed_texcoord(vec3 point_on_bed) {
+    return point_on_bed.xy+vec2(0.5,0.5);
+}
+
+void main (void) {
+    // aggregate input data (in world coordiantes)
+    v_position=vec3(a_position.xy,a_height); // point on the water surface
+    v_normal=normalize(vec3(a_normal, -1.0)); // inner normal to the water surface
+
+    // compute position of vertices for trianges rendering
+    gl_Position=to_clipspace(v_position);
+    
+    // compute reflected and refracted lights
+    vec3 from_eye=from_water_to_eye(v_position);
+    v_distance_to_eye=length(from_eye);
+    from_eye/=v_distance_to_eye;
+
+    v_c=dot(v_normal,from_eye);
+    if(v_c>0.0) { // looking from air to water
+        v_reflectance=reflection_refraction(from_eye, -v_normal, u_alpha, -v_c, v_reflected, v_refracted);
+        v_sky_texcoord=sky_texcoord(v_position, v_reflected);
+        vec3 point_on_bed=bed_intersection(v_position, v_refracted);
+        v_bed_texcoord=bed_texcoord(point_on_bed);
+        v_path_in_water=length(point_on_bed-v_position);
+    } else { // looking from water to air
+        v_reflectance=reflection_refraction(from_eye, v_normal, 1.0/u_alpha, v_c, v_reflected, v_refracted);
+        v_sky_texcoord=sky_texcoord(v_position, v_refracted);
+        vec3 point_on_bed=bed_intersection(v_position, v_reflected);
+        v_bed_texcoord=bed_texcoord(point_on_bed);
+        v_path_in_water=length(point_on_bed-v_position);
+    };
 }
 </script>
 
@@ -64,6 +104,7 @@ uniform sampler2D u_bed_texture;
 uniform highp vec3 u_sun_direction;
 uniform highp vec3 u_sun_diffused_color;
 uniform highp vec3 u_sun_reflected_color;
+uniform highp vec3 u_water_ambient_color;
 
 uniform highp float u_reflected_mult;
 uniform highp float u_diffused_mult;
@@ -74,25 +115,46 @@ uniform highp float u_sky_mult;
 varying highp vec3 v_normal;
 varying highp vec3 v_position;
 varying highp vec3 v_reflected;
+varying highp vec3 v_refracted;
 varying highp vec2 v_sky_texcoord;
 varying highp vec2 v_bed_texcoord;
 varying highp float v_reflectance;
-varying highp vec3 v_mask;
+varying highp float v_path_in_water;
+varying highp float v_distance_to_eye;
+varying highp float v_c;
+
+highp vec3 sun_contribution(highp vec3 direction, highp vec3 normal) {
+    highp float diffused_intensity=u_diffused_mult*max(-dot(normal, u_sun_direction), 0.0);
+    highp float cosphi=max(dot(u_sun_direction,direction), 0.0);
+    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
+    return diffused_intensity*u_sun_diffused_color+reflected_intensity*u_sun_reflected_color;
+}
+
+highp vec3 water_decay(highp vec3 color, highp float distance) {
+    highp float mask=exp(-distance*u_depth_mult);
+    return mix(u_water_ambient_color, color, mask);
+}
 
 void main() {
+    // fetch texture
     highp vec3 sky_color=texture2D(u_sky_texture, v_sky_texcoord).rgb;
     highp vec3 bed_color=texture2D(u_bed_texture, v_bed_texcoord).rgb;
-
+    // normalize directions
     highp vec3 normal=normalize(v_normal);
-    highp float diffused_intensity=u_diffused_mult*max(-dot(normal, u_sun_direction), 0.0);
-    highp float cosphi=max(dot(u_sun_direction,normalize(v_reflected)), 0.0);
-    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
-
-    highp vec3 ambient_water=vec3(0.0,0.3,0.5);
-    highp vec3 image_color=u_bed_mult*bed_color*v_mask+u_depth_mult*ambient_water*(1.0-v_mask);
-
-    highp vec3 rgb=u_sky_mult*sky_color*v_reflectance+image_color*(1.0-v_reflectance)
-        +diffused_intensity*u_sun_diffused_color+reflected_intensity*u_sun_reflected_color;
+    highp vec3 reflected=normalize(v_reflected);
+    highp vec3 refracted=normalize(v_refracted);
+    // compute colors
+    highp vec3 rgb;
+    highp vec3 sky=u_sky_mult*sky_color;
+    if(v_c>0.0) { // in the air
+        sky+=sun_contribution(reflected, normal);
+        highp vec3 bed=water_decay(bed_color*u_bed_mult, v_path_in_water);
+        rgb=mix(bed, sky, v_reflectance);
+    } else { // under water
+        sky+=sun_contribution(refracted, normal);
+        highp vec3 bed=water_decay(bed_color*u_bed_mult, v_path_in_water);
+        rgb=water_decay(mix(sky, bed, v_reflectance),v_distance_to_eye);
+    };
     gl_FragColor.rgb = clamp(rgb,0.0,1.0);
     gl_FragColor.a = 1.0;
 }
@@ -183,6 +245,7 @@ function initShaders() {
     shaderProgram.sunDirectionUniform = gl.getUniformLocation(shaderProgram, "u_sun_direction");
     shaderProgram.sunDiffusedColorUniform = gl.getUniformLocation(shaderProgram, "u_sun_diffused_color");
     shaderProgram.sunReflectedColorUniform = gl.getUniformLocation(shaderProgram, "u_sun_reflected_color");
+    shaderProgram.waterAmbientColorUniform = gl.getUniformLocation(shaderProgram, "u_water_ambient_color");
     shaderProgram.reflectedMultUniform = gl.getUniformLocation(shaderProgram, "u_reflected_mult");
     shaderProgram.diffusedMultUniform = gl.getUniformLocation(shaderProgram, "u_diffused_mult");
     shaderProgram.bedMultUniform = gl.getUniformLocation(shaderProgram, "u_bed_mult");
@@ -275,16 +338,21 @@ function ifEnabled(name, value) {
     return document.getElementById(name).checked?value:0.0;
 }
 
+function getValue(name) {
+    return parseFloat(document.getElementById(name).value);
+}
+
 function drawScene() {
     gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    gl.uniform1f(shaderProgram.eyeHeightUniform, 3.0);
-    gl.uniform1f(shaderProgram.alphaUniform, 0.95);
-    gl.uniform1f(shaderProgram.bedDepthUniform, 1.0);
-    gl.uniform3fv(shaderProgram.sunDirectionUniform, normalize([1.0, 0.0, 0.1]));
-    gl.uniform3f(shaderProgram.sunDiffusedColorUniform, 1.0, 0.8, 1.0);
-    gl.uniform3f(shaderProgram.sunReflectedColorUniform, 1.0, 0.8, 0.6);
+    gl.uniform1f(shaderProgram.eyeHeightUniform, getValue("eye_height"));
+    gl.uniform1f(shaderProgram.alphaUniform, getValue("eta"));
+    gl.uniform1f(shaderProgram.bedDepthUniform, getValue("bed_depth"));
+    gl.uniform3fv(shaderProgram.sunDirectionUniform, normalize([0.0, 0.0, 1.0]));
+    gl.uniform3f(shaderProgram.sunDiffusedColorUniform, 1.0, 1.0, 1.0);
+    gl.uniform3f(shaderProgram.sunReflectedColorUniform, 1.0, 1.0, 1.0);
+    gl.uniform3f(shaderProgram.waterAmbientColorUniform, 0.0, 0.3, 0.5);
     
     gl.uniform1f(shaderProgram.reflectedMultUniform, ifEnabled("reflected_flag",1.0));
     gl.uniform1f(shaderProgram.diffusedMultUniform, ifEnabled("diffused_flag",0.5));
@@ -316,7 +384,7 @@ function drawScene() {
 }
 
 function computeHeight(time) {
-    var amplitude=0.03;
+    var amplitude=getValue("amplitude");
     var wave_length=0.3;
     var speed=0.003;
 
@@ -373,8 +441,8 @@ function setMatrices() {
 
 function onMove(event) {
     if(event.buttons==0) return;
-    var dx=event.movementX/canvas.width;
-    var dy=event.movementY/canvas.height;
+    var dx=2*event.movementX/canvas.width;
+    var dy=2*event.movementY/canvas.height;
     var right=cross(up,camera)
     var new_camera=[camera[0]-right[0]*dx+up[0]*dy,camera[1]-right[1]*dx+up[1]*dy,camera[2]-right[2]*dx+up[2]*dy];
     var new_up=[up[0]-camera[0]*dx,up[1]-camera[1]*dx,up[2]-camera[2]*dx];
@@ -407,13 +475,20 @@ function webGLStart() {
 <body onload="webGLStart();">
     <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
     
-    <canvas id="render-canvas" style="border: none;" width="500" height="500"></canvas>
-    <br/>
-    <input type="checkbox" id="diffused_flag" checked />Sun diffused light
-    <input type="checkbox" id="reflected_flag" checked />Sun feflected light<br/>
-    <input type="checkbox" id="sky_flag" checked />Reflected image of sky
-    <input type="checkbox" id="bed_flag" checked />Refracted image of seabed<br/>
-    <input type="checkbox" id="depth_flag" checked />Ambient light in water<br/>
+    <div style="display: inline-block;" >
+        <canvas id="render-canvas" style="border: none;" width="500" height="500"></canvas>
+    </div>
+    <div style="display: inline-block;" >
+        <input type="checkbox" id="diffused_flag" checked />Sun diffused light<br/>
+        <input type="checkbox" id="reflected_flag" checked />Sun reflected light<br/>
+        <input type="checkbox" id="sky_flag" checked />Clouds<br/>
+        <input type="checkbox" id="bed_flag" checked />Seabed<br/>
+        <input type="checkbox" id="depth_flag" checked />Ambient light in water<br/>
+        <input type="text" id="amplitude" value="0.01" size="5" />Wave amplitude<br/>
+        <input type="text" id="eta" value="0.9" size="5" />Ratio of refractive indices<br/>
+        <input type="text" id="bed_depth" value="0.4" size="5" />Seabed depth<br/>
+        <input type="text" id="eye_height" value="0.4" size="5" />Camera distance to water<br/>
+    </div>
     <br/>
 
     Based on <a href="http://learningwebgl.com/blog/?page_id=1217">this tutorial</a><br/>
