@@ -44,7 +44,7 @@ out vec3 reflected, out vec3 refracted) {
     reflected=normalize(from_eye-2.0*outer_normal*c1);
     float k=1.0-alpha*alpha*(1.0-c1*c1);
     if(k<0.0) {
-        refracted=vec3(0.0,0.0,0.0);
+        refracted=normalize(from_eye-outer_normal*c1);
         return 1.0;    
     };
     refracted=normalize(alpha*from_eye-(alpha*c1+sqrt(k))*outer_normal);
@@ -162,6 +162,9 @@ void main() {
 
 <script type="text/javascript">
 
+var nx=100;
+var ny=100;
+
 function normalize(v) {
     l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
     return [v[0]/l, v[1]/l, v[2]/l];
@@ -260,8 +263,6 @@ var vertexNormalBuffer;
 
 var vertexHeightData;
 var vertexNormalData;
-var nx=100;
-var ny=100;
 function initBuffers() {
     vertexHeightData=new Float32Array(nx*ny);
     vertexNormalData=new Float32Array(nx*ny*2);
