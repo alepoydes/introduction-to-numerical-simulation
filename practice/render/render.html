@@ -4,6 +4,14 @@
 <title>Rendering water surface</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8">
 
+<style>
+    div {display: inline-block;}
+    canvas {border: none;}
+    @media only screen and (orientation: portrait) {
+        canvas, div {width: 100%;}
+    }
+</style>
+
 <script type="text/javascript" src="webgl-utils.js"></script>
 
 <script id="vs" type="x-shader/x-vertex">
@@ -42,11 +50,7 @@ vec3 from_water_to_eye(vec3 position) {
 float reflection_refraction(in vec3 from_eye, in vec3 outer_normal, in float alpha, in float c1, 
 out vec3 reflected, out vec3 refracted) {
     reflected=normalize(from_eye-2.0*outer_normal*c1);
-    float k=1.0-alpha*alpha*(1.0-c1*c1);
-    if(k<0.0) {
-        refracted=normalize(from_eye-outer_normal*c1);
-        return 1.0;    
-    };
+    float k=max(0.0, 1.0-alpha*alpha*(1.0-c1*c1));
     refracted=normalize(alpha*from_eye-(alpha*c1+sqrt(k))*outer_normal);
     float c2=dot(refracted,outer_normal);    
 
@@ -442,8 +446,34 @@ function setMatrices() {
 
 function onMove(event) {
     if(event.buttons==0) return;
+    event.preventDefault();
     var dx=2*event.movementX/canvas.width;
     var dy=2*event.movementY/canvas.height;
+    rotate(dx,dy);
+}
+
+function log(txt) {
+    document.getElementById("log").innerHTML=txt;
+}
+
+var touchX;
+var touchY;
+function onTouchStart(event) {
+    event.preventDefault();
+    var t=event.touches.item(0);
+    touchX=t.screenX;
+    touchY=t.screenY;
+}
+
+function onTouchMove(event) {
+    event.preventDefault();
+    var t=event.touches.item(0);
+    var dx=(t.screenX-touchX)/canvas.width;
+    var dy=(t.screenY-touchY)/canvas.height;
+    rotate(dx,dy);
+}
+
+function rotate(dx, dy) {
     var right=cross(up,camera)
     var new_camera=[camera[0]-right[0]*dx+up[0]*dy,camera[1]-right[1]*dx+up[1]*dy,camera[2]-right[2]*dx+up[2]*dy];
     var new_up=[up[0]-camera[0]*dx,up[1]-camera[1]*dx,up[2]-camera[2]*dx];
@@ -461,10 +491,12 @@ function webGLStart() {
     initTextures();
     initCamera();
 
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clearColor(1.0, 1.0, 1.0, 1.0);
     gl.enable(gl.DEPTH_TEST);
 
-    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mousemove", onMove, false);
+    canvas.addEventListener("touchmove", onTouchMove, false);
+    canvas.addEventListener("touchstart", onTouchStart, false);
 
     tick();
 }
@@ -476,10 +508,10 @@ function webGLStart() {
 <body onload="webGLStart();">
     <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
     
-    <div style="display: inline-block;" >
-        <canvas id="render-canvas" style="border: none;" width="500" height="500"></canvas>
+    <div>
+        <canvas id="render-canvas" width="500" height="500"></canvas>
     </div>
-    <div style="display: inline-block;" >
+    <div>
         <input type="checkbox" id="diffused_flag" checked />Sun diffused light<br/>
         <input type="checkbox" id="reflected_flag" checked />Sun reflected light<br/>
         <input type="checkbox" id="sky_flag" checked />Clouds<br/>
@@ -491,6 +523,7 @@ function webGLStart() {
         <input type="text" id="eye_height" value="0.4" size="5" />Camera distance to water<br/>
     </div>
     <br/>
+    <pre id="log"></pre>
 
     Based on <a href="http://learningwebgl.com/blog/?page_id=1217">this tutorial</a><br/>
     <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
