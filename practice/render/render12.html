@@ -1,0 +1,943 @@
+<html>
+    
+<head>
+<title>Rendering water surface</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+
+<style>
+    div {display: inline-block;}
+    canvas {border: none;}
+    @media only screen and (orientation: portrait) {
+        canvas, div {width: 100%;}
+    }
+</style>
+
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script type="text/javascript" src="helper.js"></script>
+<script type="text/javascript" src="webgl-debug.js"></script>
+
+<script id="water_vs" type="x-shader/x-vertex">
+#version 300 es
+uniform float u_eye_height;
+uniform mat4 u_world_view;
+
+in vec2 a_position;
+in float a_height;
+in vec2 a_normal;
+
+out vec3 v_normal;
+out vec3 v_position;
+out vec3 v_from_eye;
+
+vec4 to_clipspace(vec3 position) {
+    vec4 position_view=u_world_view*vec4(v_position,1);
+    float z=1.0-(1.0+position_view.z)/(1.0+u_eye_height);
+    return vec4(position_view.xy,-position_view.z*z/2.0,z);
+}
+
+vec3 from_water_to_eye(vec3 position) {
+    vec4 eye_view=vec4(0.0,0.0,u_eye_height,1.0);
+    vec4 eye=eye_view*u_world_view;
+    return position-eye.xyz;
+}
+
+void main (void) {
+    // aggregate input data (in world coordiantes)
+    v_position=vec3(a_position.xy,a_height); // point on the water surface
+    v_normal=normalize(vec3(a_normal, -1.0)); // inner normal to the water surface
+
+    // compute position of vertices for trianges rendering
+    gl_Position=to_clipspace(v_position);
+    
+    // compute reflected and refracted lights
+    v_from_eye=from_water_to_eye(v_position);
+}
+</script>
+
+<script id="water_fs" type="x-shader/x-fragment">
+#version 300 es
+uniform sampler2D u_sky_texture;
+uniform sampler2D u_bed_texture;
+uniform sampler2D u_caustics_texture;
+uniform highp vec3 u_sun_direction;
+uniform highp vec3 u_sun_diffused_color;
+uniform highp vec3 u_sun_reflected_color;
+uniform highp vec3 u_water_ambient_color;
+uniform highp float u_alpha;
+uniform highp float u_bed_depth;
+
+uniform highp float u_reflected_mult;
+uniform highp float u_diffused_mult;
+uniform highp float u_bed_mult;
+uniform highp float u_depth_mult;
+uniform highp float u_sky_mult;
+uniform highp float u_caustics_mult;
+
+in highp vec3 v_normal;
+in highp vec3 v_position;
+in highp vec3 v_from_eye;
+
+out highp vec4 fragmentColor;
+
+highp float reflection_refraction(in highp vec3 from_eye, in highp vec3 outer_normal, 
+in highp float alpha, in highp float c1, out highp vec3 reflected, out highp vec3 refracted) {
+    reflected=normalize(from_eye-2.0*outer_normal*c1);
+    highp float k=max(0.0, 1.0-alpha*alpha*(1.0-c1*c1));
+    refracted=normalize(alpha*from_eye-(alpha*c1+sqrt(k))*outer_normal);
+    highp float c2=dot(refracted,outer_normal);    
+
+    highp float reflectance_s=pow((alpha*c1-c2)/(alpha*c1+c2),2.0);
+    highp float reflectance_p=pow((alpha*c2-c1)/(alpha*c2+c1),2.0);
+    return (reflectance_s+reflectance_p)/2.0;
+}
+
+highp vec2 get_sky_texcoord(highp vec3 position, highp vec3 direction) {
+    return 0.05*direction.xy/direction.z+vec2(0.5,0.5);
+}
+
+highp vec3 bed_intersection(highp vec3 position, highp vec3 direction) {
+    highp float t=(-u_bed_depth-position.z)/direction.z;
+    return position+t*direction;
+}
+
+highp vec2 get_bed_texcoord(highp vec3 point_on_bed) {
+    return (point_on_bed.xy+vec2(1.0,1.0))/2.0;
+}
+
+highp vec3 sun_contribution(highp vec3 direction, highp vec3 normal) {
+    highp float diffused_intensity=u_diffused_mult*max(-dot(normal, u_sun_direction), 0.0);
+    highp float cosphi=max(dot(u_sun_direction,direction), 0.0);
+    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
+    return diffused_intensity*u_sun_diffused_color+reflected_intensity*u_sun_reflected_color;
+}
+
+highp vec3 water_decay(highp vec3 color, highp float distance) {
+    highp float mask=exp(-distance*u_depth_mult);
+    return mix(u_water_ambient_color, color, mask);
+}
+
+void main() {    
+    // normalize directions
+    highp vec3 normal=normalize(v_normal);
+    highp float distance_to_eye=length(v_from_eye);
+    highp vec3 from_eye=v_from_eye/distance_to_eye;
+    // compute reflection and refraction
+    highp float c=dot(v_normal,from_eye);
+    highp vec3 reflected;
+    highp vec3 refracted;
+    highp vec2 sky_texcoord;
+    highp vec2 bed_texcoord;
+    highp float reflectance;
+    highp float path_in_water;
+    if(c>0.0) { // looking from air to water
+        reflectance=reflection_refraction(from_eye, -normal, u_alpha, -c, reflected, refracted);
+        sky_texcoord=get_sky_texcoord(v_position, reflected);
+        highp vec3 point_on_bed=bed_intersection(v_position, refracted);
+        bed_texcoord=get_bed_texcoord(point_on_bed);
+        path_in_water=length(point_on_bed-v_position);
+    } else { // looking from water to air
+        reflectance=reflection_refraction(from_eye, normal, 1.0/u_alpha, c, reflected, refracted);
+        sky_texcoord=get_sky_texcoord(v_position, refracted);
+        highp vec3 point_on_bed=bed_intersection(v_position, reflected);
+        bed_texcoord=get_bed_texcoord(point_on_bed);
+        path_in_water=length(point_on_bed-v_position);
+    };
+    // fetch texture
+    highp vec3 sky_color=texture(u_sky_texture, sky_texcoord).rgb;
+    highp vec3 bed_source=texture(u_bed_texture, 3.0*bed_texcoord).rgb;
+    highp vec3 caustics_color=8.0*texture(u_caustics_texture, bed_texcoord).rgb;
+    highp vec3 bed_color=mix(bed_source,caustics_color*bed_source,u_caustics_mult);
+    // compute colors
+    highp vec3 rgb;
+    highp vec3 sky=u_sky_mult*sky_color;
+    if(c>0.0) { // in the air
+        sky+=sun_contribution(reflected, normal);
+        highp vec3 bed=water_decay(bed_color*u_bed_mult, path_in_water);
+        rgb=mix(bed, sky, reflectance);
+    } else { // under water
+        sky+=sun_contribution(refracted, normal);
+        highp vec3 bed=water_decay(bed_color*u_bed_mult, path_in_water);
+        rgb=water_decay(mix(sky, bed, reflectance),distance_to_eye);
+    };
+    fragmentColor.rgb = clamp(rgb,0.0,1.0);
+    fragmentColor.a = 1.0;
+}
+</script>
+
+<script id="background_vs" type="x-shader/x-vertex">
+#version 300 es
+uniform float u_eye_height;
+uniform mat4 u_world_view;
+
+in vec2 a_position;
+
+out vec3 v_position;
+out vec3 v_from_eye;
+
+vec4 from_clipspace(vec2 position) {
+    return vec4(position,-1.0,1.0);
+}
+
+vec3 from_water_to_eye(vec3 position) {
+    vec4 eye_view=vec4(0.0,0.0,u_eye_height,1.0);
+    vec4 eye=eye_view*u_world_view;
+    return position-eye.xyz;
+}
+
+void main (void) {
+    gl_Position=vec4(a_position,0.0,1.0);
+    v_position=(from_clipspace(a_position)*u_world_view).xyz;
+    v_from_eye=from_water_to_eye(v_position);
+}
+</script>
+
+<script id="background_fs" type="x-shader/x-fragment">
+#version 300 es
+uniform sampler2D u_sky_texture;
+uniform sampler2D u_bed_texture;
+uniform sampler2D u_caustics_texture;
+uniform highp vec3 u_sun_direction;
+uniform highp vec3 u_sun_reflected_color;
+uniform highp vec3 u_water_ambient_color;
+uniform highp float u_bed_depth;
+
+uniform highp float u_reflected_mult;
+uniform highp float u_bed_mult;
+uniform highp float u_depth_mult;
+uniform highp float u_sky_mult;
+uniform highp float u_caustics_mult;
+
+in highp vec3 v_position;
+in highp vec3 v_from_eye;
+
+out highp vec4 fragmentColor;
+
+highp vec2 get_sky_texcoord(highp vec3 position, highp vec3 direction) {
+    return 0.05*direction.xy/direction.z+vec2(0.5,0.5);
+}
+
+highp vec3 bed_intersection(highp vec3 position, highp vec3 direction) {
+    highp float t=(-u_bed_depth-position.z)/direction.z;
+    return position+t*direction;
+}
+
+highp vec2 get_bed_texcoord(highp vec3 point_on_bed) {
+    return (point_on_bed.xy+vec2(1.0,1.0))/2.0;
+}
+
+highp vec3 sun_contribution(highp vec3 direction) {
+    highp float cosphi=max(dot(u_sun_direction,direction), 0.0);
+    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
+    return reflected_intensity*u_sun_reflected_color;
+}
+
+highp vec3 water_decay(highp vec3 color, highp float distance) {
+    highp float mask=exp(-distance*u_depth_mult);
+    return mix(u_water_ambient_color, color, mask);
+}
+
+void main() {    
+    // normalize directions
+    highp vec3 from_eye=normalize(v_from_eye);
+    // compute color
+    highp vec3 rgb;    
+    if(from_eye.z>=0.0) { // looking at the sky
+        highp vec2 sky_texcoord;
+        sky_texcoord=get_sky_texcoord(v_position, from_eye);
+        highp vec3 sky_color=texture(u_sky_texture, sky_texcoord).rgb;
+        rgb=u_sky_mult*sky_color+sun_contribution(from_eye);
+    } else { // looking at the seabed
+        highp vec2 bed_texcoord;
+        highp float path_in_water;
+        highp vec3 point_on_bed=bed_intersection(v_position, from_eye);
+        bed_texcoord=get_bed_texcoord(point_on_bed);
+        if(dot(from_eye,point_on_bed-v_position)>0.0)
+            path_in_water=length(point_on_bed-v_position);  
+        else path_in_water=0.0;
+        highp vec3 bed_source=texture(u_bed_texture, 3.0*bed_texcoord).rgb;
+        highp vec3 caustics_color=8.0*texture(u_caustics_texture, bed_texcoord).rgb;
+        highp vec3 bed_color=mix(bed_source,caustics_color*bed_source,u_caustics_mult);    
+        rgb=water_decay(bed_color*u_bed_mult, path_in_water);
+    };
+    fragmentColor.rgb = clamp(rgb,0.0,1.0);
+    fragmentColor.a = 1.0;
+}
+</script>
+
+<script id="caustics_vs" type="x-shader/x-vertex">
+#version 300 es
+uniform vec3 u_sun_direction;
+uniform float u_bed_depth;
+uniform float u_alpha;
+
+in vec2 a_position;
+in float a_height;
+in vec2 a_normal;
+
+out vec3 v_suncoord;
+out vec3 v_position;
+out float v_intensity;
+
+float refraction(in vec3 incident, in vec3 outer_normal, 
+in float alpha, out vec3 refracted) {
+    float c1=dot(outer_normal,incident);
+    if(c1>0.0) return 0.0;
+    float k=max(0.0, 1.0-alpha*alpha*(1.0-c1*c1));
+    refracted=normalize(alpha*incident-(alpha*c1+sqrt(k))*outer_normal);
+    float c2=dot(refracted,outer_normal);    
+    float reflectance_s=pow((alpha*c1-c2)/(alpha*c1+c2),2.0);
+    float reflectance_p=pow((alpha*c2-c1)/(alpha*c2+c1),2.0);
+    return (reflectance_s+reflectance_p)/2.0;
+}
+
+vec3 bed_intersection(vec3 position, vec3 direction) {
+    float t=(-u_bed_depth-position.z)/direction.z;
+    return position+t*direction;
+}
+
+void main (void) {
+    // Aggregate attributes
+    vec3 position=vec3(a_position,a_height);
+    vec3 outer_normal=-normalize(vec3(a_normal, -1.0));
+    // Compute projection to orthogonal to sun plane
+    // to compute amount of light per fragment.
+    v_suncoord=position-u_sun_direction*dot(u_sun_direction, position);
+    // Compute refracted ray
+    vec3 refracted;
+    v_intensity=1.0-refraction(-u_sun_direction, outer_normal, u_alpha, refracted);
+    // compute projection to bed
+    vec3 on_bed=bed_intersection(position,refracted);
+    gl_Position=vec4(on_bed.xy,0.0,1.0);
+    v_position=vec3(on_bed.xy,1.0);
+}
+</script>
+
+<script id="caustics_fs" type="x-shader/x-fragment">
+#version 300 es
+in highp vec3 v_suncoord;
+in highp vec3 v_position;
+in highp float v_intensity;
+  
+out highp vec4 fragmentColor;
+
+void main() {    
+    highp float area_dst=length(cross(dFdx(v_position),dFdy(v_position)));
+    highp float area_src=length(cross(dFdx(v_suncoord),dFdy(v_suncoord)));
+    highp float concentration=area_src/area_dst;
+    highp float intensity=v_intensity*concentration/8.0;
+    fragmentColor=vec4(intensity,intensity,intensity,1.0);
+}
+</script>
+    
+<script type="text/javascript">
+
+/////////////////////////////////
+// Camera 
+
+var Camera=function(canvas) {
+    this.canvas=canvas;
+    this.reset();
+    canvas.addEventListener("mousemove", this.onMove.bind(this), false);
+    canvas.addEventListener("touchmove", this.onTouchMove.bind(this), false);
+    canvas.addEventListener("touchstart", this.onTouchStart.bind(this), false);
+};
+
+Camera.prototype.reset=function() {
+    this.camera=[0.0, 0.0, 1.0];
+    this.up=[0.0, 1.0, 0.0];
+};
+
+Camera.prototype.right=function() {
+    return cross(this.up,this.camera);
+};
+
+Camera.prototype.modelview=function() {
+    var right=this.right();
+    return [right[0], this.up[0], this.camera[0], 0.0
+           ,right[1], this.up[1], this.camera[1], 0.0
+           ,right[2], this.up[2], this.camera[2], 0.0
+           ,0.0,      0.0,        0.0,            1.0];
+};
+
+Camera.prototype.onMove=function(event) {
+    if(event.buttons==0) return;
+    event.preventDefault();
+    var dx=2*event.movementX/this.canvas.width;
+    var dy=2*event.movementY/this.canvas.height;
+    this.rotate(dx,dy);
+};
+
+Camera.prototype.onTouchStart=function(event) {
+    event.preventDefault();
+    var t=event.touches.item(0);
+    this.touchX=t.screenX;
+    this.touchY=t.screenY;
+}
+
+Camera.prototype.onTouchMove=function(event) {
+    event.preventDefault();
+    var t=event.touches.item(0);
+    var dx=(t.screenX-this.touchX)/this.canvas.width;
+    var dy=(t.screenY-this.touchY)/this.canvas.height;
+    this.rotate(dx,dy);
+}
+
+Camera.prototype.rotate=function(dx, dy) {
+    var right=this.right();
+    var new_camera=[this.camera[0]-right[0]*dx+this.up[0]*dy
+                   ,this.camera[1]-right[1]*dx+this.up[1]*dy
+                   ,this.camera[2]-right[2]*dx+this.up[2]*dy];
+    var new_up=[this.up[0]-this.camera[0]*dx
+               ,this.up[1]-this.camera[1]*dx
+               ,this.up[2]-this.camera[2]*dx];
+    this.camera=normalize(new_camera)
+    this.up=normalize(new_up)
+    this.up=normalize(cross(this.camera,cross(this.up,this.camera)));
+}
+
+/////////////////////////////////
+// WaterProgram
+
+var WaterProgram=function(camera,textures,rttTexture, nx,ny) {
+    this.camera=camera;
+    this.textures=textures;
+    this.rttTexture=rttTexture;
+    this.initShaders();
+    this.initBuffers(nx,ny);
+};
+
+WaterProgram.prototype.setMatrices=function() {
+    gl.uniformMatrix4fv(this.shaderProgram.worldViewUniform, false, 
+        this.camera.modelview());
+};
+
+WaterProgram.prototype.draw=function() {
+    gl.useProgram(this.shaderProgram);
+
+    gl.enableVertexAttribArray(this.shaderProgram.vertexPositionAttribute);
+    gl.enableVertexAttribArray(this.shaderProgram.vertexHeightAttribute);
+    gl.enableVertexAttribArray(this.shaderProgram.vertexNormalAttribute);
+
+    gl.uniform1f(this.shaderProgram.eyeHeightUniform, getValue("eye_height"));
+    gl.uniform1f(this.shaderProgram.alphaUniform, getValue("eta"));
+    gl.uniform1f(this.shaderProgram.bedDepthUniform, getValue("bed_depth"));
+    gl.uniform3fv(this.shaderProgram.sunDirectionUniform, normalize([0.0, 0.0, 1.0]));
+    gl.uniform3f(this.shaderProgram.sunDiffusedColorUniform, 1.0, 1.0, 1.0);
+    gl.uniform3f(this.shaderProgram.sunReflectedColorUniform, 1.0, 1.0, 1.0);
+    gl.uniform3f(this.shaderProgram.waterAmbientColorUniform, 0.0, 0.3, 0.5);
+    
+    gl.uniform1f(this.shaderProgram.reflectedMultUniform, ifEnabled("reflected_flag",1.0));
+    gl.uniform1f(this.shaderProgram.diffusedMultUniform, ifEnabled("diffused_flag",0.5));
+    gl.uniform1f(this.shaderProgram.bedMultUniform, ifEnabled("bed_flag",1.0));
+    gl.uniform1f(this.shaderProgram.depthMultUniform, ifEnabled("depth_flag",1.0));
+    gl.uniform1f(this.shaderProgram.skyMultUniform, ifEnabled("sky_flag",1.0));
+    gl.uniform1f(this.shaderProgram.causticsMultUniform, ifEnabled("caustics_flag",1.0));
+
+    this.setMatrices();
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.skyTexture);
+    gl.uniform1i(this.shaderProgram.skyTextureUniform, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.bedTexture);
+    gl.uniform1i(this.shaderProgram.bedTextureUniform, 1);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.rttTexture);
+    gl.uniform1i(this.shaderProgram.causticsUniform, 2);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexNormalBuffer);
+    gl.vertexAttribPointer(this.shaderProgram.vertexNormalAttribute, this.vertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+    gl.vertexAttribPointer(this.shaderProgram.vertexPositionAttribute, this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexHeightBuffer);
+    gl.vertexAttribPointer(this.shaderProgram.vertexHeightAttribute, this.vertexHeightBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.vertexIndexBuffer);
+    gl.drawElements(gl.TRIANGLES, this.vertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+    gl.disableVertexAttribArray(this.shaderProgram.vertexPositionAttribute);
+    gl.disableVertexAttribArray(this.shaderProgram.vertexHeightAttribute);
+    gl.disableVertexAttribArray(this.shaderProgram.vertexNormalAttribute);
+};
+
+WaterProgram.prototype.updateData=function() {
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexNormalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.vertexNormalData, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexHeightBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.vertexHeightData, gl.DYNAMIC_DRAW);
+};
+
+WaterProgram.prototype.initShaders=function() {
+    var fragmentShader = getShader(gl,"water_vs");
+    var vertexShader = getShader(gl,"water_fs");
+
+    this.shaderProgram = gl.createProgram();
+    gl.attachShader(this.shaderProgram, vertexShader);
+    gl.attachShader(this.shaderProgram, fragmentShader);
+    gl.linkProgram(this.shaderProgram);
+
+    if (!gl.getProgramParameter(this.shaderProgram, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+
+    gl.useProgram(this.shaderProgram);
+
+    this.shaderProgram.vertexPositionAttribute = gl.getAttribLocation(this.shaderProgram, "a_position");
+    this.shaderProgram.vertexHeightAttribute = gl.getAttribLocation(this.shaderProgram, "a_height");
+    this.shaderProgram.vertexNormalAttribute = gl.getAttribLocation(this.shaderProgram, "a_normal");
+
+    this.shaderProgram.eyeHeightUniform = gl.getUniformLocation(this.shaderProgram, "u_eye_height");
+    this.shaderProgram.worldViewUniform = gl.getUniformLocation(this.shaderProgram, "u_world_view");
+    this.shaderProgram.alphaUniform = gl.getUniformLocation(this.shaderProgram, "u_alpha");
+    this.shaderProgram.bedDepthUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_depth");
+
+    this.shaderProgram.skyTextureUniform = gl.getUniformLocation(this.shaderProgram, "u_sky_texture");
+    this.shaderProgram.bedTextureUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_texture");
+    this.shaderProgram.causticsUniform = gl.getUniformLocation(this.shaderProgram, "u_caustics_texture");
+    this.shaderProgram.sunDirectionUniform = gl.getUniformLocation(this.shaderProgram, "u_sun_direction");
+    this.shaderProgram.sunDiffusedColorUniform = gl.getUniformLocation(this.shaderProgram, "u_sun_diffused_color");
+    this.shaderProgram.sunReflectedColorUniform = gl.getUniformLocation(this.shaderProgram, "u_sun_reflected_color");
+    this.shaderProgram.waterAmbientColorUniform = gl.getUniformLocation(this.shaderProgram, "u_water_ambient_color");
+    this.shaderProgram.reflectedMultUniform = gl.getUniformLocation(this.shaderProgram, "u_reflected_mult");
+    this.shaderProgram.diffusedMultUniform = gl.getUniformLocation(this.shaderProgram, "u_diffused_mult");
+    this.shaderProgram.bedMultUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_mult");
+    this.shaderProgram.depthMultUniform = gl.getUniformLocation(this.shaderProgram, "u_depth_mult");
+    this.shaderProgram.skyMultUniform = gl.getUniformLocation(this.shaderProgram, "u_sky_mult");
+    this.shaderProgram.causticsMultUniform = gl.getUniformLocation(this.shaderProgram, "u_caustics_mult");
+}
+
+WaterProgram.prototype.initBuffers=function(nx,ny) {
+    this.nx=nx;
+    this.ny=ny;
+
+    this.vertexHeightData=new Float32Array(nx*ny);
+    this.vertexNormalData=new Float32Array(nx*ny*2);
+
+    var vertexPositionData=new Float32Array(nx*ny*2);
+    var vertexIndicesData = new Uint16Array((nx-1)*(ny-1)*6);
+    for(var x=0; x<nx; x++) for(var y=0; y<ny; y++) {
+        vertexPositionData[0+2*(y+x*ny)]=2*x/(nx-1)-1;
+        vertexPositionData[1+2*(y+x*ny)]=2*y/(ny-1)-1;
+    };
+    for(var x=0; x<nx-1; x++) for(var y=0; y<ny-1; y++) {
+        vertexIndicesData[0+6*(y+x*(ny-1))]=y+x*ny;
+        vertexIndicesData[1+6*(y+x*(ny-1))]=y+(x+1)*ny;
+        vertexIndicesData[2+6*(y+x*(ny-1))]=(y+1)+(x+1)*ny;
+        vertexIndicesData[3+6*(y+x*(ny-1))]=(y+1)+x*ny;
+        vertexIndicesData[4+6*(y+x*(ny-1))]=y+x*ny;
+        vertexIndicesData[5+6*(y+x*(ny-1))]=(y+1)+(x+1)*ny;
+    };
+
+    this.vertexPositionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexPositionData, gl.STATIC_DRAW);
+    this.vertexPositionBuffer.itemSize = 2;
+    this.vertexPositionBuffer.numItems = nx*ny;
+
+    this.vertexIndexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.vertexIndexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, vertexIndicesData, gl.STATIC_DRAW);
+    this.vertexIndexBuffer.itemSize = 1;
+    this.vertexIndexBuffer.numItems = 6*(nx-1)*(ny-1);
+
+    this.vertexNormalBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexNormalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.vertexNormalData, gl.DYNAMIC_DRAW);
+    this.vertexNormalBuffer.itemSize = 2;
+    this.vertexNormalBuffer.numItems = nx*ny;
+
+    this.vertexHeightBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexHeightBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.vertexHeightData, gl.DYNAMIC_DRAW);
+    this.vertexHeightBuffer.itemSize = 1;
+    this.vertexHeightBuffer.numItems = nx*ny;
+}
+
+/////////////////////////////////
+// BackgroundProgram
+
+var BackgroundProgram=function(camera,textures,rttTexture) {
+    this.camera=camera;
+    this.textures=textures;
+    this.rttTexture=rttTexture;
+    this.initShaders();
+    this.initBuffers();
+};
+
+BackgroundProgram.prototype.setMatrices=function() {
+    gl.uniformMatrix4fv(this.shaderProgram.worldViewUniform, false, 
+        this.camera.modelview());
+};
+
+BackgroundProgram.prototype.draw=function() {
+    gl.useProgram(this.shaderProgram);
+
+    gl.enableVertexAttribArray(this.shaderProgram.vertexPositionAttribute);
+
+    gl.uniform1f(this.shaderProgram.eyeHeightUniform, getValue("eye_height"));
+    gl.uniform1f(this.shaderProgram.bedDepthUniform, getValue("bed_depth"));
+    gl.uniform3fv(this.shaderProgram.sunDirectionUniform, getSunDirection());
+    gl.uniform3f(this.shaderProgram.sunReflectedColorUniform, 1.0, 1.0, 1.0);
+    gl.uniform3f(this.shaderProgram.waterAmbientColorUniform, 0.0, 0.3, 0.5);
+    
+    gl.uniform1f(this.shaderProgram.reflectedMultUniform, ifEnabled("reflected_flag",1.0));
+    gl.uniform1f(this.shaderProgram.bedMultUniform, ifEnabled("bed_flag",1.0));
+    gl.uniform1f(this.shaderProgram.depthMultUniform, ifEnabled("depth_flag",1.0));
+    gl.uniform1f(this.shaderProgram.skyMultUniform, ifEnabled("sky_flag",1.0));
+    gl.uniform1f(this.shaderProgram.causticsMultUniform, ifEnabled("caustics_flag",1.0));
+
+    this.setMatrices();
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.skyTexture);
+    gl.uniform1i(this.shaderProgram.skyTextureUniform, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.textures.bedTexture);
+    gl.uniform1i(this.shaderProgram.bedTextureUniform, 1);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.rttTexture);
+    gl.uniform1i(this.shaderProgram.causticsUniform, 2);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+    gl.vertexAttribPointer(this.shaderProgram.vertexPositionAttribute, this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.vertexIndexBuffer);
+    gl.drawElements(gl.TRIANGLES, this.vertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.disableVertexAttribArray(this.shaderProgram.vertexPositionAttribute);
+};
+
+BackgroundProgram.prototype.initShaders=function() {
+    var fragmentShader = getShader(gl,"background_vs");
+    var vertexShader = getShader(gl,"background_fs");
+
+    this.shaderProgram = gl.createProgram();
+    gl.attachShader(this.shaderProgram, vertexShader);
+    gl.attachShader(this.shaderProgram, fragmentShader);
+    gl.linkProgram(this.shaderProgram);
+
+    if (!gl.getProgramParameter(this.shaderProgram, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+
+    gl.useProgram(this.shaderProgram);
+
+    this.shaderProgram.vertexPositionAttribute = gl.getAttribLocation(this.shaderProgram, "a_position");
+
+    this.shaderProgram.eyeHeightUniform = gl.getUniformLocation(this.shaderProgram, "u_eye_height");
+    this.shaderProgram.worldViewUniform = gl.getUniformLocation(this.shaderProgram, "u_world_view");
+    this.shaderProgram.bedDepthUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_depth");
+
+    this.shaderProgram.skyTextureUniform = gl.getUniformLocation(this.shaderProgram, "u_sky_texture");
+    this.shaderProgram.bedTextureUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_texture");
+    this.shaderProgram.causticsUniform = gl.getUniformLocation(this.shaderProgram, "u_caustics_texture");    
+    this.shaderProgram.sunDirectionUniform = gl.getUniformLocation(this.shaderProgram, "u_sun_direction");
+    this.shaderProgram.sunReflectedColorUniform = gl.getUniformLocation(this.shaderProgram, "u_sun_reflected_color");
+    this.shaderProgram.waterAmbientColorUniform = gl.getUniformLocation(this.shaderProgram, "u_water_ambient_color");
+    this.shaderProgram.reflectedMultUniform = gl.getUniformLocation(this.shaderProgram, "u_reflected_mult");
+    this.shaderProgram.bedMultUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_mult");
+    this.shaderProgram.depthMultUniform = gl.getUniformLocation(this.shaderProgram, "u_depth_mult");
+    this.shaderProgram.skyMultUniform = gl.getUniformLocation(this.shaderProgram, "u_sky_mult");
+    this.shaderProgram.causticsMultUniform = gl.getUniformLocation(this.shaderProgram, "u_caustics_mult");
+}
+
+BackgroundProgram.prototype.initBuffers=function() {
+    var vertexPositionData=new Float32Array([-1.0,-1.0,  1.0,-1.0,  1.0,1.0, -1.0,1.0]);
+    var vertexIndicesData = new Uint16Array([0,1,2,  2,3,0]);
+
+    this.vertexPositionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexPositionData, gl.STATIC_DRAW);
+    this.vertexPositionBuffer.itemSize = 2;
+    this.vertexPositionBuffer.numItems = 4;
+
+    this.vertexIndexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.vertexIndexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, vertexIndicesData, gl.STATIC_DRAW);
+    this.vertexIndexBuffer.itemSize = 1;
+    this.vertexIndexBuffer.numItems = 6;
+}
+
+/////////////////////////////////
+// CausticsProgram
+
+var CausticsProgram=function(water) {
+    this.initShaders();
+    this.initBuffers(water);
+};
+
+CausticsProgram.prototype.draw=function() {
+    gl.useProgram(this.shaderProgram);
+
+    gl.uniform3fv(this.shaderProgram.sunDirectionUniform, getSunDirection());
+    gl.uniform1f(this.shaderProgram.alphaUniform, getValue("eta"));    
+    gl.uniform1f(this.shaderProgram.bedDepthUniform, getValue("bed_depth"));
+
+    if(this.shaderProgram.vertexNormalAttribute>=0) {
+        gl.enableVertexAttribArray(this.shaderProgram.vertexNormalAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexNormalBuffer);
+        gl.vertexAttribPointer(this.shaderProgram.vertexNormalAttribute, this.vertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+    };
+
+    if(this.shaderProgram.vertexPositionAttribute>=0) {
+        gl.enableVertexAttribArray(this.shaderProgram.vertexPositionAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+        gl.vertexAttribPointer(this.shaderProgram.vertexPositionAttribute, this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+    };
+
+    if(this.shaderProgram.vertexHeightAttribute>=0) {
+        gl.enableVertexAttribArray(this.shaderProgram.vertexHeightAttribute);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexHeightBuffer);
+        gl.vertexAttribPointer(this.shaderProgram.vertexHeightAttribute, this.vertexHeightBuffer.itemSize, gl.FLOAT, false, 0, 0);
+    };
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.vertexIndexBuffer);
+    gl.drawElements(gl.TRIANGLES, this.vertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+    if(this.shaderProgram.vertexPositionAttribute>=0)
+        gl.disableVertexAttribArray(this.shaderProgram.vertexPositionAttribute);
+    if(this.shaderProgram.vertexHeightAttribute>=0)
+        gl.disableVertexAttribArray(this.shaderProgram.vertexHeightAttribute);
+    if(this.shaderProgram.vertexNormalAttribute>=0)
+        gl.disableVertexAttribArray(this.shaderProgram.vertexNormalAttribute);
+};
+
+CausticsProgram.prototype.initShaders=function() {
+    var fragmentShader = getShader(gl,"caustics_vs");
+    var vertexShader = getShader(gl,"caustics_fs");
+
+    this.shaderProgram = gl.createProgram();
+    gl.attachShader(this.shaderProgram, vertexShader);
+    gl.attachShader(this.shaderProgram, fragmentShader);
+    gl.linkProgram(this.shaderProgram);
+
+    if (!gl.getProgramParameter(this.shaderProgram, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+
+    gl.useProgram(this.shaderProgram);
+
+    this.shaderProgram.vertexPositionAttribute = gl.getAttribLocation(this.shaderProgram, "a_position");
+    this.shaderProgram.vertexHeightAttribute = gl.getAttribLocation(this.shaderProgram, "a_height");
+    this.shaderProgram.vertexNormalAttribute = gl.getAttribLocation(this.shaderProgram, "a_normal");
+
+    this.shaderProgram.sunDirectionUniform = gl.getUniformLocation(this.shaderProgram, "u_sun_direction");
+    this.shaderProgram.alphaUniform = gl.getUniformLocation(this.shaderProgram, "u_alpha");    
+    this.shaderProgram.bedDepthUniform = gl.getUniformLocation(this.shaderProgram, "u_bed_depth");
+}
+
+CausticsProgram.prototype.initBuffers=function(water) {
+    this.nx=water.nx;
+    this.ny=water.ny;
+    this.vertexPositionBuffer=water.vertexPositionBuffer;
+    this.vertexIndexBuffer=water.vertexIndexBuffer;
+    this.vertexNormalBuffer=water.vertexNormalBuffer;
+    this.vertexHeightBuffer=water.vertexHeightBuffer;
+}
+
+/////////////////////////////////
+// Textures
+
+var Textures=function() {
+    this.skyTexture = this.load("fluffy_clouds.png");
+    this.bedTexture = this.load("seabed.png"); 
+};
+
+Textures.prototype.load=function(src) {
+    var texture = gl.createTexture();
+    texture.image = new Image();
+    texture.image.onload = function () {
+        handleLoadedTexture(gl, texture)
+    };
+    texture.image.src = src;
+    return texture;
+};
+
+/////////////////////////////////
+// Application
+
+var gl;
+function initGL(canvas) {
+    try {
+        gl = canvas.getContext("webgl2");
+        //gl = WebGLDebugUtils.makeDebugContext(gl);
+        gl.viewportWidth = canvas.width;
+        gl.viewportHeight = canvas.height;
+    } catch (e) {
+    }
+    if (!gl) {
+        alert("Could not initialise WebGL, sorry :-(");
+    }
+}
+
+function ifEnabled(name, value) {
+    return document.getElementById(name).checked?value:0.0;
+}
+
+function getValue(name) {
+    return parseFloat(document.getElementById(name).value);
+}
+
+function getSunDirection() {
+    return normalize([0.0, 0.0, 1.0]);
+}
+
+function computeHeight(time) {
+    var amplitude=getValue("amplitude");
+    var wave_length=0.3;
+    var speed=0.003;
+
+    var omega=2*Math.PI/wave_length;
+    for(var x=0; x<water.nx; x++) for(var y=0; y<water.ny; y++) {
+        var idx=x*water.ny+y;
+        var posX=2*x/(water.nx-1)-1;
+        var posY=2*y/(water.ny-1)-1;
+        var d=Math.sqrt(posX*posX+posY*posY);
+        var arg=omega*d-time*speed;
+        water.vertexHeightData[idx]=amplitude*Math.cos(arg);
+        var dcos=-amplitude*omega*Math.sin(arg)/d;
+        water.vertexNormalData[2*idx]=posX*dcos;
+        water.vertexNormalData[2*idx+1]=posY*dcos;
+    };
+    water.updateData();
+}
+
+var lastTime = 0;
+function animate() {
+    var timeNow = new Date().getTime();
+    if (lastTime != 0) { var elapsed = timeNow - lastTime; };
+    lastTime = timeNow;
+    computeHeight(timeNow);
+}
+
+function renderCaustics() {
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.enable(gl.BLEND);
+    gl.disable(gl.DEPTH_TEST);
+    caustics.draw();
+
+}
+
+function drawScene() {
+
+    if(document.getElementById("caustics_buffer").checked) {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        renderCaustics();
+    } else {       
+        gl.viewport(0, 0, rttFramebuffer.width, rttFramebuffer.height);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, rttFramebuffer);
+        renderCaustics();
+        gl.bindTexture(gl.TEXTURE_2D, rttTexture);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.disable(gl.BLEND);
+        gl.enable(gl.DEPTH_TEST);
+        gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        background.draw();
+        if(document.getElementById("render_water").checked) {
+            gl.clear(gl.DEPTH_BUFFER_BIT);
+            water.draw();
+        };
+    };
+};
+
+function tick() {
+    animate();    
+    requestAnimFrame(tick);
+    drawScene();
+};
+
+function log(txt) {
+    document.getElementById("log").innerHTML=txt;
+};
+
+var rttFramebuffer;
+var rttTexture;
+function initTextureFramebuffer() {
+    rttFramebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rttFramebuffer);
+    rttFramebuffer.width = 512;
+    rttFramebuffer.height = 512;
+    rttTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, rttTexture);
+    
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, rttFramebuffer.width, rttFramebuffer.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rttTexture, 0);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);  
+};
+
+var canvas;
+var water;
+var background;
+var caustics;
+function webGLStart() {
+    canvas = document.getElementById("render-canvas");
+    initGL(canvas);
+    initTextureFramebuffer();
+    var textures=new Textures();
+    var camera=new Camera(canvas);    
+    background=new BackgroundProgram(camera, textures, rttTexture);
+    water=new WaterProgram(camera, textures, rttTexture, 100, 100);
+    caustics=new CausticsProgram(water);
+
+    tick();
+}
+
+</script>
+</head>
+
+
+<body onload="webGLStart();">
+    <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
+    
+    <div>
+        <canvas id="render-canvas" width="500" height="500"></canvas>
+    </div>
+    <div>
+        <input type="checkbox" id="caustics_buffer" />Show only caustics buffer<br/>
+        <input type="checkbox" id="render_water" checked />Show water surface<br/>
+        <input type="checkbox" id="caustics_flag" checked />Render caustics<br/>
+        <input type="checkbox" id="diffused_flag" checked />Sun diffused light<br/>
+        <input type="checkbox" id="reflected_flag" checked />Sun reflected light<br/>
+        <input type="checkbox" id="sky_flag" checked />Clouds<br/>
+        <input type="checkbox" id="bed_flag" checked />Seabed<br/>
+        <input type="checkbox" id="depth_flag" checked />Ambient light in water<br/>
+        <input type="text" id="amplitude" value="0.01" size="5" />Wave amplitude<br/>
+        <input type="text" id="eta" value="0.75" size="5" />Ratio of refractive indices<br/>
+        <input type="text" id="bed_depth" value="0.4" size="5" />Seabed depth<br/>
+        <input type="text" id="eye_height" value="0.4" size="5" />Camera distance to water<br/>
+    </div>
+    <br/>
+    <pre id="log"></pre>
+
+    Based on <a href="http://learningwebgl.com/blog/?page_id=1217">this tutorial</a><br/>
+    <a href="https://alepoydes.github.io/introduction-to-numerical-simulation/">Назад к курсу</a><br/>
+</body>
+
+</html>
+    

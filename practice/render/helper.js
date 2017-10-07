@@ -15,7 +15,7 @@ function getShader(gl, id) {
     var str = "";
     var k = shaderScript.firstChild;
     while (k) {
-        if (k.nodeType == 3) { str += k.textContent; }
+        if (k.nodeType == 3) { str += k.textContent.trim(); }
         k = k.nextSibling;
     }
     var shader;
