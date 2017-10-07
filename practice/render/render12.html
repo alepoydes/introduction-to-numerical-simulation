@@ -387,12 +387,12 @@ Camera.prototype.rotate=function(dx, dy) {
     var new_camera=[this.camera[0]-right[0]*dx+this.up[0]*dy
                    ,this.camera[1]-right[1]*dx+this.up[1]*dy
                    ,this.camera[2]-right[2]*dx+this.up[2]*dy];
-    var new_up=[this.up[0]-this.camera[0]*dx
-               ,this.up[1]-this.camera[1]*dx
-               ,this.up[2]-this.camera[2]*dx];
-    this.camera=normalize(new_camera)
-    this.up=normalize(new_up)
-    this.up=normalize(cross(this.camera,cross(this.up,this.camera)));
+    var new_right=[right[0]+this.camera[0]*dx
+                  ,right[1]+this.camera[1]*dx
+                  ,right[2]+this.camera[2]*dx];
+    new_right[2]=0.0;    
+    this.camera=normalize(new_camera);
+    this.up=normalize(cross(this.camera,normalize(new_right)));
 }
 
 /////////////////////////////////
@@ -421,7 +421,7 @@ WaterProgram.prototype.draw=function() {
     gl.uniform1f(this.shaderProgram.eyeHeightUniform, getValue("eye_height"));
     gl.uniform1f(this.shaderProgram.alphaUniform, getValue("eta"));
     gl.uniform1f(this.shaderProgram.bedDepthUniform, getValue("bed_depth"));
-    gl.uniform3fv(this.shaderProgram.sunDirectionUniform, normalize([0.0, 0.0, 1.0]));
+    gl.uniform3fv(this.shaderProgram.sunDirectionUniform, getSunDirection());
     gl.uniform3f(this.shaderProgram.sunDiffusedColorUniform, 1.0, 1.0, 1.0);
     gl.uniform3f(this.shaderProgram.sunReflectedColorUniform, 1.0, 1.0, 1.0);
     gl.uniform3f(this.shaderProgram.waterAmbientColorUniform, 0.0, 0.3, 0.5);
@@ -791,7 +791,8 @@ function getValue(name) {
 }
 
 function getSunDirection() {
-    return normalize([0.0, 0.0, 1.0]);
+    var phi=getValue("sun_position")*Math.PI/2;
+    return normalize([0.0, Math.cos(phi), Math.sin(phi)]);
 }
 
 function computeHeight(time) {
@@ -931,6 +932,7 @@ function webGLStart() {
         <input type="text" id="eta" value="0.75" size="5" />Ratio of refractive indices<br/>
         <input type="text" id="bed_depth" value="0.4" size="5" />Seabed depth<br/>
         <input type="text" id="eye_height" value="0.4" size="5" />Camera distance to water<br/>
+        <input type="text" id="sun_position" value="1" size="5" />Sun position<br/>
     </div>
     <br/>
     <pre id="log"></pre>
