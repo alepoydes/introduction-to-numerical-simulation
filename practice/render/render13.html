@@ -82,6 +82,41 @@ Camera.prototype.rotate=function(dx, dy) {
     this.up=normalize(cross(this.camera,normalize(new_right)));
 }
 
+//////////////////////////////////////////////////////////////////
+// Common shaders
+
+var sharedFragmentShader=`
+const highp float M_PI=3.1415926535897932384626433832795;
+highp vec2 get_sky_texcoord(highp vec3 position, highp vec3 direction) {
+    highp float phi=(atan(direction.y,direction.x)/M_PI+1.0)/2.0;
+    highp float theta=asin(direction.z)/M_PI*2.0;
+    return vec2(phi,theta);
+}
+
+highp vec3 bed_intersection(highp vec3 position, highp vec3 direction) {
+    highp float t=(-u_bed_depth-position.z)/direction.z;
+    return position+t*direction;
+}
+
+highp vec2 get_bed_texcoord(highp vec3 point_on_bed) {
+    return (point_on_bed.xy+vec2(1.0,1.0))/2.0;
+}
+
+highp vec3 water_decay(highp vec3 color, highp float distance) {
+    highp float mask=exp(-distance*u_depth_mult);
+    return mix(u_water_ambient_color, color, mask);
+}
+
+highp vec3 sky_contribution(highp vec3 direction) {
+    highp float cosphi=dot(u_sun_direction,direction);
+    highp float reflected_intensity=u_reflected_mult*pow(max(cosphi,0.0),100.0);
+    highp vec2 sky_texcoord=get_sky_texcoord(v_position, direction);
+    highp vec3 sky_color=texture(u_sky_texture, sky_texcoord).rgb;
+    highp float sky_intensity=u_sky_mult*(0.7+0.5*cosphi);
+    return reflected_intensity*u_sun_reflected_color+sky_intensity*sky_color;
+}
+`;
+
 /////////////////////////////////
 // WaterProgram
 
@@ -153,6 +188,8 @@ in highp vec3 v_from_eye;
 
 out highp vec4 fragmentColor;
 
+${sharedFragmentShader}
+
 highp float reflection_refraction(in highp vec3 from_eye, in highp vec3 outer_normal, 
 in highp float alpha, in highp float c1, out highp vec3 reflected, out highp vec3 refracted) {
     reflected=normalize(from_eye-2.0*outer_normal*c1);
@@ -165,32 +202,9 @@ in highp float alpha, in highp float c1, out highp vec3 reflected, out highp vec
     return (reflectance_s+reflectance_p)/2.0;
 }
 
-const highp float M_PI=3.1415926535897932384626433832795;
-highp vec2 get_sky_texcoord(highp vec3 position, highp vec3 direction) {
-    highp float phi=(atan(direction.y,direction.x)/M_PI+1.0)/2.0;
-    highp float theta=asin(direction.z)/M_PI*2.0;
-    return vec2(phi,theta);
-}
-
-highp vec3 bed_intersection(highp vec3 position, highp vec3 direction) {
-    highp float t=(-u_bed_depth-position.z)/direction.z;
-    return position+t*direction;
-}
-
-highp vec2 get_bed_texcoord(highp vec3 point_on_bed) {
-    return (point_on_bed.xy+vec2(1.0,1.0))/2.0;
-}
-
-highp vec3 sun_contribution(highp vec3 direction, highp vec3 normal) {
+highp vec3 sun_contribution(highp vec3 normal) {
     highp float diffused_intensity=u_diffused_mult*max(-dot(normal, u_sun_direction), 0.0);
-    highp float cosphi=max(dot(u_sun_direction,direction), 0.0);
-    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
-    return diffused_intensity*u_sun_diffused_color+reflected_intensity*u_sun_reflected_color;
-}
-
-highp vec3 water_decay(highp vec3 color, highp float distance) {
-    highp float mask=exp(-distance*u_depth_mult);
-    return mix(u_water_ambient_color, color, mask);
+    return diffused_intensity*u_sun_diffused_color;
 }
 
 void main() {    
@@ -202,37 +216,33 @@ void main() {
     highp float c=dot(v_normal,from_eye);
     highp vec3 reflected;
     highp vec3 refracted;
-    highp vec2 sky_texcoord;
     highp vec2 bed_texcoord;
     highp float reflectance;
     highp float path_in_water;
+    highp vec3 sky;
     if(c>0.0) { // looking from air to water
         reflectance=reflection_refraction(from_eye, -normal, u_alpha, -c, reflected, refracted);
-        sky_texcoord=get_sky_texcoord(v_position, reflected);
+        sky=sky_contribution(reflected)+sun_contribution(normal);
         highp vec3 point_on_bed=bed_intersection(v_position, refracted);
         bed_texcoord=get_bed_texcoord(point_on_bed);
         path_in_water=length(point_on_bed-v_position);
     } else { // looking from water to air
         reflectance=reflection_refraction(from_eye, normal, 1.0/u_alpha, c, reflected, refracted);
-        sky_texcoord=get_sky_texcoord(v_position, refracted);
+        sky=sky_contribution(refracted);
         highp vec3 point_on_bed=bed_intersection(v_position, reflected);
         bed_texcoord=get_bed_texcoord(point_on_bed);
         path_in_water=length(point_on_bed-v_position);
     };
     // fetch texture
-    highp vec3 sky_color=texture(u_sky_texture, sky_texcoord).rgb;
     highp vec3 bed_source=texture(u_bed_texture, 3.0*bed_texcoord).rgb;
     highp vec3 caustics_color=8.0*texture(u_caustics_texture, bed_texcoord).rgb;
     highp vec3 bed_color=mix(bed_source,caustics_color*bed_source,u_caustics_mult);
     // compute colors
     highp vec3 rgb;
-    highp vec3 sky=u_sky_mult*sky_color;
     if(c>0.0) { // in the air
-        sky+=sun_contribution(reflected, normal);
         highp vec3 bed=water_decay(bed_color*u_bed_mult, path_in_water);
         rgb=mix(bed, sky, reflectance);
     } else { // under water
-        sky+=sun_contribution(refracted, normal);
         highp vec3 bed=water_decay(bed_color*u_bed_mult, path_in_water);
         rgb=water_decay(mix(sky, bed, reflectance),distance_to_eye);
     };
@@ -259,7 +269,7 @@ WaterProgram.prototype.draw=function() {
     gl.uniform3fv(this.shaderProgram.sunDirectionUniform, getSunDirection());
     gl.uniform3f(this.shaderProgram.sunDiffusedColorUniform, 1.0, 1.0, 1.0);
     gl.uniform3f(this.shaderProgram.sunReflectedColorUniform, 1.0, 1.0, 1.0);
-    gl.uniform3f(this.shaderProgram.waterAmbientColorUniform, 0.0, 0.3, 0.5);
+    gl.uniform3fv(this.shaderProgram.waterAmbientColorUniform, getWaterAmbient());
     
     gl.uniform1f(this.shaderProgram.reflectedMultUniform, ifEnabled("reflected_flag",1.0));
     gl.uniform1f(this.shaderProgram.diffusedMultUniform, ifEnabled("diffused_flag",0.5));
@@ -448,32 +458,7 @@ in highp vec3 v_from_eye;
 
 out highp vec4 fragmentColor;
 
-const highp float M_PI=3.1415926535897932384626433832795;
-highp vec2 get_sky_texcoord(highp vec3 position, highp vec3 direction) {
-    highp float phi=(atan(direction.y,direction.x)/M_PI+1.0)/2.0;
-    highp float theta=asin(direction.z)/M_PI*2.0;
-    return vec2(phi,theta);
-}
-
-highp vec3 bed_intersection(highp vec3 position, highp vec3 direction) {
-    highp float t=(-u_bed_depth-position.z)/direction.z;
-    return position+t*direction;
-}
-
-highp vec2 get_bed_texcoord(highp vec3 point_on_bed) {
-    return (point_on_bed.xy+vec2(1.0,1.0))/2.0;
-}
-
-highp vec3 sun_contribution(highp vec3 direction) {
-    highp float cosphi=max(dot(u_sun_direction,direction), 0.0);
-    highp float reflected_intensity=u_reflected_mult*pow(cosphi,100.0);
-    return reflected_intensity*u_sun_reflected_color;
-}
-
-highp vec3 water_decay(highp vec3 color, highp float distance) {
-    highp float mask=exp(-distance*u_depth_mult);
-    return mix(u_water_ambient_color, color, mask);
-}
+${sharedFragmentShader}
 
 void main() {    
     // normalize directions
@@ -481,10 +466,7 @@ void main() {
     // compute color
     highp vec3 rgb;    
     if(from_eye.z>=0.0) { // looking at the sky
-        highp vec2 sky_texcoord;
-        sky_texcoord=get_sky_texcoord(v_position, from_eye);
-        highp vec3 sky_color=texture(u_sky_texture, sky_texcoord).rgb;
-        rgb=u_sky_mult*sky_color+sun_contribution(from_eye);
+        rgb=sky_contribution(from_eye);
     } else { // looking at the seabed
         highp vec2 bed_texcoord;
         highp float path_in_water;
@@ -516,7 +498,7 @@ BackgroundProgram.prototype.draw=function() {
     gl.uniform1f(this.shaderProgram.bedDepthUniform, getValue("bed_depth"));
     gl.uniform3fv(this.shaderProgram.sunDirectionUniform, getSunDirection());
     gl.uniform3f(this.shaderProgram.sunReflectedColorUniform, 1.0, 1.0, 1.0);
-    gl.uniform3f(this.shaderProgram.waterAmbientColorUniform, 0.0, 0.3, 0.5);
+    gl.uniform3fv(this.shaderProgram.waterAmbientColorUniform, getWaterAmbient());
     
     gl.uniform1f(this.shaderProgram.reflectedMultUniform, ifEnabled("reflected_flag",1.0));
     gl.uniform1f(this.shaderProgram.bedMultUniform, ifEnabled("bed_flag",1.0));
@@ -789,6 +771,11 @@ function getSunDirection() {
     var phi=getValue("sun_position")*Math.PI/2;
     return normalize([0.0, Math.cos(phi), Math.sin(phi)]);
 }
+
+function getWaterAmbient() {
+    var intensity=getSunDirection()[2];
+    return [intensity*0.0, intensity*0.3, intensity*0.5]
+};
 
 function computeHeight(time) {
     var amplitude=getValue("amplitude");
