@@ -18,13 +18,17 @@ function getShader(gl, id) {
         if (k.nodeType == 3) { str += k.textContent.trim(); }
         k = k.nextSibling;
     }
-    var shader;
     if (shaderScript.type == "x-shader/x-fragment") {
-        shader = gl.createShader(gl.FRAGMENT_SHADER);
+        return compileShader(gl, str, gl.FRAGMENT_SHADER);
     } else if (shaderScript.type == "x-shader/x-vertex") {
-        shader = gl.createShader(gl.VERTEX_SHADER);
-    } else { return null; }
-    gl.shaderSource(shader, str);
+        return compileShader(gl, str, gl.VERTEX_SHADER);
+    }; 
+    return null;
+}
+
+function compileShader(gl, src, type) {
+    var shader=gl.createShader(type);
+    gl.shaderSource(shader, src);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
         alert(gl.getShaderInfoLog(shader));
