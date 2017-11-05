@@ -16,3 +16,4 @@
 1. [Численное решение дифференциальных уравнений.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integrators.ipynb)
 1. [Нейронные сети. Алгоритм word2vec.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/word2vec.ipynb)
 1. [Визуализация водной поверхности в OpenGL.](practice/render/render.md) [Что должно получиться.](practice/render/render12.html)
+1. [Симуляция водной поверхности.](practice/water/water.md) 
