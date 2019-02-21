@@ -7,6 +7,7 @@
 1. [Методы вычисления функций: суммирование ряда.](theory/Computation_of_elementary_functions.md)
 1. [Интерполяционные многочлены.](theory/interpolation.md)
 1. [Итерационные методы.](theory/iterations.md)
+1. [Литература для углубленного изучения](theory/references.md)
 
 # Лабораторные работы
 
