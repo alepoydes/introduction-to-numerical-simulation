@@ -15,6 +15,7 @@
 1. [Вот что значит "плохое" среднее.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/What%20does%20mean%20mean%20mean.ipynb)
 1. [Вычисление элементарных функций.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Not%20so%20elementary%20elementary%20functions.ipynb)
 1. [Интерполяция многочленами](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Polynomial%20interpolation.ipynb)
+1. [Различия методов дифференцирования](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Differentiation%20of%20differentiation%20methods.ipynb)
 1. [Численное решение дифференциальных уравнений.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integrators.ipynb)
 1. [Нейронные сети. Алгоритм word2vec.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/word2vec.ipynb)
 1. [Визуализация водной поверхности в OpenGL.](practice/render/render.md) [Что должно получиться.](practice/render/render12.html)
