@@ -21,6 +21,8 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Polynomial%20interpolation.ipynb)
 1. [Различия методов дифференцирования](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Differentiation%20of%20differentiation%20methods.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Differentiation%20of%20differentiation%20methods.ipynb)
+1. [Численное интегрирование](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integration.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Integration.ipynb)
 1. [Системы линейных уравнений. Многосеточные методы.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Multigrid.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Multigrid.ipynb)
 1. [Численное решение дифференциальных уравнений.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integrators.ipynb)
