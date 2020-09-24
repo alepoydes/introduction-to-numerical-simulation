@@ -23,6 +23,8 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Differentiation%20of%20differentiation%20methods.ipynb)
 1. [Численное интегрирование](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integration.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Integration.ipynb)
+1. [Методы Монте-Карло](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/MonteCarlo.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/MonteCarlo.ipynb)
 1. [Системы линейных уравнений. Многосеточные методы.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Multigrid.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Multigrid.ipynb)
 1. [Численное решение дифференциальных уравнений.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Integrators.ipynb)
