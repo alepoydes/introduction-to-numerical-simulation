@@ -33,3 +33,8 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/word2vec.ipynb)
 1. [Визуализация водной поверхности в OpenGL.](practice/render/render.md) [Что должно получиться.](practice/render/render12.html)
 1. [Симуляция водной поверхности.](practice/water/water.md) 
+
+# Вспомогательные материалы
+
+1. [Пишем быстрый код на Python.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/FastPython.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/FastPython.ipynb)
