@@ -36,6 +36,11 @@
 1. [Визуализация водной поверхности в OpenGL.](practice/render/render.md) [Что должно получиться.](practice/render/render12.html)
 1. [Симуляция водной поверхности.](practice/water/water.md) 
 
+# Задания курса "Матричные вычисления"
+
+1. [Аппаратные особенности вычислений](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/hardware.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/hardware.ipynb)
+
 # Вспомогательные материалы
 
 1. [Пишем быстрый код на Python.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/FastPython.ipynb)
