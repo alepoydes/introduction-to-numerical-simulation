@@ -40,6 +40,8 @@
 
 1. [Аппаратные особенности вычислений](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/hardware.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/hardware.ipynb)
+1. [Метод прогонки и LU разложение](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/lu.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/lu.ipynb)
 
 # Вспомогательные материалы
 
