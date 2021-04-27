@@ -46,6 +46,9 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/toeplitz.ipynb)
 1. [Ортогональные разложения. QR разложение.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/qr.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/qr.ipynb)
+1. [Разложение Шура. Спектральное и сингулярное разложения.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/schur.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/schur.ipynb)
+
 
 # Вспомогательные материалы
 
