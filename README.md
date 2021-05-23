@@ -48,6 +48,9 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/qr.ipynb)
 1. [Разложение Шура. Спектральное и сингулярное разложения.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/schur.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/schur.ipynb)
+1. [Итерационные методы.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/iterations.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/iterations.ipynb)
+
 
 
 # Вспомогательные материалы
