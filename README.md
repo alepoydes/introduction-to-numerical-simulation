@@ -50,7 +50,8 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/schur.ipynb)
 1. [Итерационные методы.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/iterations.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/iterations.ipynb)
-
+1. [Параллельные вычисления на Python с использованием MPI и CUDА.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/mpi.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/mpi.ipynb)
 
 
 # Вспомогательные материалы
