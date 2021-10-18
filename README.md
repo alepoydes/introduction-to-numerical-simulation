@@ -53,6 +53,14 @@
 1. [Параллельные вычисления на Python с использованием MPI и CUDА.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/matrix/mpi.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/matrix/mpi.ipynb)
 
+# Задания курса "Математическое моделирование"
+1. [Конфуз со степенями.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/Trouble%20with%20powers.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/Trouble%20with%20powers.ipynb)
+1. [Вот что значит "плохое" среднее.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/What%20does%20mean%20mean%20mean.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/What%20does%20mean%20mean%20mean.ipynb)
+1. [Байесовская оценка решения.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/statistics/bayesian%20estimation.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/statistics/bayesian%20estimation.ipynb)
+
 
 # Вспомогательные материалы
 
