@@ -60,6 +60,9 @@
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/What%20does%20mean%20mean%20mean.ipynb)
 1. [Байесовская оценка решения.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/statistics/bayesian%20estimation.ipynb)
 [(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice/statistics/bayesian%20estimation.ipynb)
+1. [Моделирование COVID-19.](https://nbviewer.jupyter.org/urls/alepoydes.github.io/introduction-to-numerical-simulation/practice/covid/COVID-19.ipynb)
+[(colab)](https://colab.research.google.com/github/alepoydes/introduction-to-numerical-simulation/blob/master/practice//covid/COVID-19.ipynb)
+
 
 
 # Вспомогательные материалы
