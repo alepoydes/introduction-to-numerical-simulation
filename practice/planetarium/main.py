@@ -411,27 +411,35 @@ class TrailRender:
         uniform float u_size;
         uniform vec2 u_center;
         uniform float u_aspectratio;
+        uniform int u_t;
+        uniform int u_tmax;
 
         in vec3 in_pos;
+        out float v_fade;
 
         void main() {
             gl_Position = vec4( (in_pos.xy-u_center)/(u_size*vec2(u_aspectratio,1.0)), 0.0, 1.0);
+
+            int t = gl_VertexID;
+            float linear_t = (t<=u_t)?(u_t-t):(u_tmax-t+u_t);
+            v_fade = 1.0-linear_t/u_tmax;
         }
 """
 
     FRAGMENT_SHADER = """
         #version 330
+        in float v_fade;
         out vec4 f_color;
         void main() {
-            f_color = vec4(0.3, 0.5, 0.7, 1.0);
+            f_color = vec4(vec3(0.3, 0.5, 0.7)*v_fade, 1.0);
         }
 """
 
-    def __init__(self, ctx, maxbodies=8, maxmemory=10000, skip=10):
+    def __init__(self, ctx, maxbodies=8, maxmemory=500, minchange=1):
         # Сохраняем OpenGL контекст, куда мы будем рисовать.
         self.ctx = ctx
-        self.skip = skip
-        self.subframe = 0
+        self.minchange = minchange # Минимальное изменение координат, которое будет записано.
+        self.lastpos = 0 # Последние сохраненные координаты.
 
         self.prog = self.ctx.program(
             vertex_shader=self.VERTEX_SHADER,
@@ -441,6 +449,8 @@ class TrailRender:
         self.u_center = self.prog['u_center']
         self.u_size = self.prog['u_size']
         self.u_aspectratio = self.prog['u_aspectratio']
+        self.u_t = self.prog['u_t']
+        self.u_tmax = self.prog['u_tmax']
 
         # Буфер для координат тела.
         self.vbo = self.ctx.buffer(np.zeros((maxmemory,3),dtype='f4'))
@@ -467,11 +477,14 @@ class TrailRender:
         """
         self.nbodies = world.nbodies # Реальное число тел в системе.
 
-        if self.subframe>0: # Запоминаем положение тел не каждый кадр, так как между кадрами изменение слишком мало.
-            self.subframe -= 1
-            return 
+        self.center, self.size = world.get_center_and_size()
+        self.u_center.value = tuple(self.center[:2]) 
+        self.u_size.value = self.size
 
-        self.subframe = self.skip
+        # Обновляем координаты, только если они заметно изменились.
+        if self.lastpos is not None and np.linalg.norm((self.lastpos-world.state.pos).flatten(),ord=np.inf)<self.minchange:
+            return
+        self.lastpos = world.state.pos
 
         # Запоминаем положения тел.
         self.history[:self.nbodies, self.t] = world.state.pos # Массив всех центров тел.
@@ -483,15 +496,13 @@ class TrailRender:
             self.history[:,0] = self.history[:,-1]
         self.history[:,self.t] = np.nan
         
-        self.center, self.size = world.get_center_and_size()
-        self.u_center.value = tuple(self.center[:2]) 
-        self.u_size.value = self.size
-
     def render(self, aspectratio):
         """
         Рисуем траектории тел.
         """
         self.u_aspectratio.value = aspectratio
+        self.u_t.value = self.t
+        self.u_tmax.value = self.history.shape[1]
         # Для каждого тела выгружаем коордианты траектории и вызываем программу отрисовки.
         for n in range(self.nbodies):
             self.vbo.write(self.history[n].astype(np.float32)) # Сохраняем радиусы в буфер.    
@@ -599,6 +610,10 @@ class Application(mglw.WindowConfig):
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
         self.ctx.viewport = (0,0)+self.window_size
         aspectratio = self.window_size[0]/self.window_size[1]
+
+        self.ctx.enable(mgl.BLEND)
+        self.ctx.blend_func = mgl.ADDITIVE_BLENDING
+        self.ctx.blend_equation = mgl.MAX
 
         # Рисуем траектории тел.
         if not self.trail_render: # Создаем рендер, если это не сделано.
