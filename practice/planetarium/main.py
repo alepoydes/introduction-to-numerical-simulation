@@ -266,6 +266,14 @@ class World:
         self._state = self._state + dstate*dt
         self._t += dt
 
+    def get_center_and_size(self):
+        pos = self.state.pos
+        mass = self.state.mass # Массив масс всех тел.
+        # center = np.mean(pos, axis=0) # Геометрический центр системы.
+        center = np.sum(mass[:,None]*pos, axis=0)/np.sum(mass) # Центр масс.
+        # size = np.max(np.abs(center[None]-pos)) + np.max(world.radius) # Радиус ящика, в который помещается вся система.
+        size = np.sqrt(np.max(np.sum((center[None]-pos)**2,axis=-1))) # Самый большой радиус орбиты. 
+        return center, size
 
 #####################################################################################################################
 
@@ -369,12 +377,8 @@ class SpriteRender:
         self.pos_bo.write(pos.astype(np.float32)) 
         self.sprite_bo.write(world.sprite.astype(np.int32))
 
-        mass = world.state.mass # Массив масс всех тел.
-        # center = np.mean(pos, axis=0) # Геометрический центр системы.
-        self.center = np.sum(mass[:,None]*pos, axis=0)/np.sum(mass) # Центр масс.
+        self.center, self.size = world.get_center_and_size()
         self.u_center.value = tuple(self.center[:2]) 
-        # size = np.max(np.abs(center[None]-pos)) + np.max(world.radius) # Радиус ящика, в который помещается вся система.
-        self.size = np.sqrt(np.max(np.sum((self.center[None]-pos)**2,axis=-1))) # Самый большой радиус орбиты. 
         self.u_size.value = self.size
 
 
@@ -390,6 +394,101 @@ class SpriteRender:
 
         self.texture.use()     
         self.vao.render(instances=self.nbodies)
+
+#####################################################################################################################
+
+class TrailRender:
+    """
+    Класс для отрисовки траекторий материальных точек.
+    """
+
+    VERTEX_SHADER = """
+        #version 330
+        uniform float u_size;
+        uniform vec2 u_center;
+
+        in vec3 in_pos;
+
+        void main() {
+            gl_Position = vec4( (in_pos.xy-u_center)/u_size, 0.0, 1.0);
+        }
+"""
+
+    FRAGMENT_SHADER = """
+        #version 330
+        out vec4 f_color;
+        void main() {
+            f_color = vec4(0.3, 0.5, 0.7, 1.0);
+        }
+"""
+
+    def __init__(self, ctx, maxbodies=8, maxmemory=10000, skip=10):
+        # Сохраняем OpenGL контекст, куда мы будем рисовать.
+        self.ctx = ctx
+        self.skip = skip
+        self.subframe = 0
+
+        self.prog = self.ctx.program(
+            vertex_shader=self.VERTEX_SHADER,
+            fragment_shader=self.FRAGMENT_SHADER,
+        )
+
+        self.u_center = self.prog['u_center']
+        self.u_size = self.prog['u_size']
+
+        # Буфер для координат тела.
+        self.vbo = self.ctx.buffer(np.zeros((maxmemory,3),dtype='f4'))
+
+        # Перечень всех аргументов для программы OpenGL.
+        vao_content = [
+            (self.vbo, '3f', 'in_pos'),
+        ]
+
+        self.vao = self.ctx.vertex_array(self.prog, vao_content)
+
+        self.center = None
+        self.size = None
+
+        # Массив истории положений тел.
+        self.history = np.zeros((maxbodies,maxmemory,3), dtype='f4')
+        self.history[:] = np.nan
+        self.t = 0 # Текущий момент в истории.
+        self.nbodies = 0 # Реальное число тел.
+
+    def update(self, world):
+        """
+        Запоминает текущие положения тел.
+        """
+        self.nbodies = world.nbodies # Реальное число тел в системе.
+
+        if self.subframe>0: # Запоминаем положение тел не каждый кадр, так как между кадрами изменение слишком мало.
+            self.subframe -= 1
+            return 
+
+        self.subframe = self.skip
+
+        # Запоминаем положения тел.
+        self.history[:self.nbodies, self.t] = world.state.pos # Массив всех центров тел.
+
+        # Обновляем момент времени. При переполнении буфера просто начинаем перезаписывать его с начала.
+        self.t += 1
+        if self.t>=self.history.shape[1]:
+            self.t = 1
+            self.history[:,0] = self.history[:,-1]
+        self.history[:,self.t] = np.nan
+        
+        self.center, self.size = world.get_center_and_size()
+        self.u_center.value = tuple(self.center[:2]) 
+        self.u_size.value = self.size
+
+    def render(self):
+        """
+        Рисуем траектории тел.
+        """
+        # Для каждого тела выгружаем коордианты траектории и вызываем программу отрисовки.
+        for n in range(self.nbodies):
+            self.vbo.write(self.history[n].astype(np.float32)) # Сохраняем радиусы в буфер.    
+            self.vao.render(mgl.LINE_STRIP)
 
 
 #####################################################################################################################
@@ -456,6 +555,7 @@ class Application(mglw.WindowConfig):
         ) 
         # Резервируем переменные под рендеры, но не создаем их, так как контекст еще не проинициализирован.
         self.sprites_render = None
+        self.trail_render = None
 
     def update_physics(self):
         """
@@ -485,6 +585,18 @@ class Application(mglw.WindowConfig):
         # Сначала мы очищаем экран. 
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
         self.ctx.viewport = (0,0)+self.window_size
+
+        # Рисуем траектории тел.
+        if not self.trail_render: # Создаем рендер, если это не сделано.
+            self.trail_render = TrailRender(ctx=self.ctx)
+
+        self.trail_render.update(world=self.world) # Запоминаем положения тел.
+        self.trail_render.render() # Рисуем все траектории.
+        # ВНИМАНИЕ! Рисовать на каждом кадре всю траекторию целиком не оптимально.
+        # Лучше рисовать траектории на отдельном framebuffer, который не будет очищаться на каждом кадре.
+        # Тогда каждый раз будет достаточно рисовать только последний сегмент траектории, что значительно быстрее,
+        # и позволит рисовать очень длинные траектории.
+        # В этом примере мы не стали так делать, чтобы не вдаваться в детали работы OpenGL.
 
         # Теперь рисуем небесные тела.
         # Создаем рендер, если это еще не сделано.
