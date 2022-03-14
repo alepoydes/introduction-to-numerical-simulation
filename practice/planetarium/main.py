@@ -287,6 +287,7 @@ class SpriteRender:
         uniform float u_size;
         uniform vec2 u_center;
         uniform ivec2 u_nsymbols;
+        uniform float u_aspectratio;
 
         in vec2 in_vert;
         in float in_radius;
@@ -296,7 +297,7 @@ class SpriteRender:
         out vec2 v_tex;
 
         void main() {
-            gl_Position = vec4( (in_vert*in_radius+in_pos.xy-u_center)/u_size, 0.0, 1.0);
+            gl_Position = vec4( (in_vert*in_radius+in_pos.xy-u_center)/(vec2(u_aspectratio,1.0)*u_size), 0.0, 1.0);
 
             int row = in_sprite / u_nsymbols.x;
             int col = in_sprite - row*u_nsymbols.x;
@@ -330,6 +331,7 @@ class SpriteRender:
         self.u_center = self.prog['u_center']
         self.u_size = self.prog['u_size']
         self.u_nsymbols = self.prog['u_nsymbols']
+        self.u_aspectratio = self.prog['u_aspectratio']
 
         self.u_nsymbols.value = (5,3)
 
@@ -382,7 +384,7 @@ class SpriteRender:
         self.u_size.value = self.size
 
 
-    def render(self):
+    def render(self, aspectratio):
         """
         Рисует спрайты в контекст, переданный в конструктор.
         """
@@ -391,6 +393,8 @@ class SpriteRender:
         # Для отладки можно считать параметры шейдера следующим образом:
         # print(f"{np.frombuffer(self.pos_bo.read(),dtype=np.float32).reshape((-1,3))=}")
         # print(f"{self.u_center.value=}")
+
+        self.u_aspectratio.value = aspectratio
 
         self.texture.use()     
         self.vao.render(instances=self.nbodies)
@@ -406,11 +410,12 @@ class TrailRender:
         #version 330
         uniform float u_size;
         uniform vec2 u_center;
+        uniform float u_aspectratio;
 
         in vec3 in_pos;
 
         void main() {
-            gl_Position = vec4( (in_pos.xy-u_center)/u_size, 0.0, 1.0);
+            gl_Position = vec4( (in_pos.xy-u_center)/(u_size*vec2(u_aspectratio,1.0)), 0.0, 1.0);
         }
 """
 
@@ -435,6 +440,7 @@ class TrailRender:
 
         self.u_center = self.prog['u_center']
         self.u_size = self.prog['u_size']
+        self.u_aspectratio = self.prog['u_aspectratio']
 
         # Буфер для координат тела.
         self.vbo = self.ctx.buffer(np.zeros((maxmemory,3),dtype='f4'))
@@ -481,10 +487,11 @@ class TrailRender:
         self.u_center.value = tuple(self.center[:2]) 
         self.u_size.value = self.size
 
-    def render(self):
+    def render(self, aspectratio):
         """
         Рисуем траектории тел.
         """
+        self.u_aspectratio.value = aspectratio
         # Для каждого тела выгружаем коордианты траектории и вызываем программу отрисовки.
         for n in range(self.nbodies):
             self.vbo.write(self.history[n].astype(np.float32)) # Сохраняем радиусы в буфер.    
@@ -501,6 +508,8 @@ class Application(mglw.WindowConfig):
     gl_version = (3, 3) # Минимальная требуемая версия OpenGL.
     window_size = (800, 800) # Размер окна.
     resource_dir = (Path(__file__).parent / 'resources').resolve()
+    resizable = True
+    # samples = 8 
 
 
     def __init__(self, **kwargs):
@@ -557,6 +566,10 @@ class Application(mglw.WindowConfig):
         self.sprites_render = None
         self.trail_render = None
 
+    def resize(self, width: int, height: int):
+        # print(f"{self.window_size=} {width=} {height=}")
+        self.window_size = (width, height)
+
     def update_physics(self):
         """
         Делает один шаг симуляции
@@ -585,13 +598,14 @@ class Application(mglw.WindowConfig):
         # Сначала мы очищаем экран. 
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
         self.ctx.viewport = (0,0)+self.window_size
+        aspectratio = self.window_size[0]/self.window_size[1]
 
         # Рисуем траектории тел.
         if not self.trail_render: # Создаем рендер, если это не сделано.
             self.trail_render = TrailRender(ctx=self.ctx)
 
         self.trail_render.update(world=self.world) # Запоминаем положения тел.
-        self.trail_render.render() # Рисуем все траектории.
+        self.trail_render.render(aspectratio=aspectratio) # Рисуем все траектории.
         # ВНИМАНИЕ! Рисовать на каждом кадре всю траекторию целиком не оптимально.
         # Лучше рисовать траектории на отдельном framebuffer, который не будет очищаться на каждом кадре.
         # Тогда каждый раз будет достаточно рисовать только последний сегмент траектории, что значительно быстрее,
@@ -606,7 +620,7 @@ class Application(mglw.WindowConfig):
             self.sprites_render = SpriteRender(ctx=self.ctx, texture=texture)
 
         self.sprites_render.update(world=self.world)
-        self.sprites_render.render()
+        self.sprites_render.render(aspectratio=aspectratio)
 
 #####################################################################################################################
 
