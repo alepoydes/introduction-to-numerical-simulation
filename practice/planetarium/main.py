@@ -285,9 +285,10 @@ class SpriteRender:
     VERTEX_SHADER = """
         #version 330
         uniform float u_size;
-        uniform vec2 u_center;
+        uniform vec3 u_center;
         uniform ivec2 u_nsymbols;
         uniform float u_aspectratio;
+        uniform mat4 u_view;
 
         in vec2 in_vert;
         in float in_radius;
@@ -297,7 +298,9 @@ class SpriteRender:
         out vec2 v_tex;
 
         void main() {
-            gl_Position = vec4( (in_vert*in_radius+in_pos.xy-u_center)/(vec2(u_aspectratio,1.0)*u_size), 0.0, 1.0);
+            vec3 centered = (in_pos-u_center);
+            vec4 rotated = u_view * vec4(centered, 1.0);
+            gl_Position = vec4( (in_vert*in_radius+rotated.xy)/u_size/vec2(u_aspectratio,1.0), 0.0, 1.0);
 
             int row = in_sprite / u_nsymbols.x;
             int col = in_sprite - row*u_nsymbols.x;
@@ -332,6 +335,7 @@ class SpriteRender:
         self.u_size = self.prog['u_size']
         self.u_nsymbols = self.prog['u_nsymbols']
         self.u_aspectratio = self.prog['u_aspectratio']
+        self.u_view = self.prog['u_view']
 
         self.u_nsymbols.value = (5,3)
 
@@ -380,11 +384,11 @@ class SpriteRender:
         self.sprite_bo.write(world.sprite.astype(np.int32))
 
         self.center, self.size = world.get_center_and_size()
-        self.u_center.value = tuple(self.center[:2]) 
+        self.u_center.value = tuple(self.center) 
         self.u_size.value = self.size
 
 
-    def render(self, aspectratio):
+    def render(self, aspectratio, camera):
         """
         Рисует спрайты в контекст, переданный в конструктор.
         """
@@ -395,6 +399,7 @@ class SpriteRender:
         # print(f"{self.u_center.value=}")
 
         self.u_aspectratio.value = aspectratio
+        self.u_view.value = tuple( camera.get_view_matrix().T.flatten() )
 
         self.texture.use()     
         self.vao.render(instances=self.nbodies)
@@ -409,16 +414,19 @@ class TrailRender:
     VERTEX_SHADER = """
         #version 330
         uniform float u_size;
-        uniform vec2 u_center;
+        uniform vec3 u_center;
         uniform float u_aspectratio;
         uniform int u_t;
         uniform int u_tmax;
+        uniform mat4 u_view;
 
         in vec3 in_pos;
         out float v_fade;
 
         void main() {
-            gl_Position = vec4( (in_pos.xy-u_center)/(u_size*vec2(u_aspectratio,1.0)), 0.0, 1.0);
+            vec3 centered = (in_pos-u_center)/u_size;
+            vec4 rotated = u_view * vec4(centered, 1.0);
+            gl_Position = vec4( rotated.xy/vec2(u_aspectratio,1.0), 0.0, 1.0);
 
             int t = gl_VertexID;
             float linear_t = (t<=u_t)?(u_t-t):(u_tmax-t+u_t);
@@ -451,6 +459,7 @@ class TrailRender:
         self.u_aspectratio = self.prog['u_aspectratio']
         self.u_t = self.prog['u_t']
         self.u_tmax = self.prog['u_tmax']
+        self.u_view = self.prog['u_view']
 
         # Буфер для координат тела.
         self.vbo = self.ctx.buffer(np.zeros((maxmemory,3),dtype='f4'))
@@ -478,7 +487,7 @@ class TrailRender:
         self.nbodies = world.nbodies # Реальное число тел в системе.
 
         self.center, self.size = world.get_center_and_size()
-        self.u_center.value = tuple(self.center[:2]) 
+        self.u_center.value = tuple(self.center) 
         self.u_size.value = self.size
 
         # Обновляем координаты, только если они заметно изменились.
@@ -496,17 +505,73 @@ class TrailRender:
             self.history[:,0] = self.history[:,-1]
         self.history[:,self.t] = np.nan
         
-    def render(self, aspectratio):
+    def render(self, aspectratio, camera):
         """
         Рисуем траектории тел.
         """
         self.u_aspectratio.value = aspectratio
         self.u_t.value = self.t
         self.u_tmax.value = self.history.shape[1]
+        self.u_view.value = tuple( camera.get_view_matrix().T.flatten() )
+
         # Для каждого тела выгружаем коордианты траектории и вызываем программу отрисовки.
         for n in range(self.nbodies):
             self.vbo.write(self.history[n].astype(np.float32)) # Сохраняем радиусы в буфер.    
             self.vao.render(mgl.LINE_STRIP)
+
+#####################################################################################################################
+
+class Camera(object):
+    def __init__(self):
+        """
+        Класс для хранения ориентации камеры и ее вращения.
+        Ориентация задается векторами:
+        `self.look_direction` - направление взгляда,
+        `self.look_up` - направление вверх,
+        `self.look_right` - направление направо.
+        """
+        self.reset_FOV()
+
+    def reset_FOV(self):
+        self.look_direction = np.array([0,0,-1], dtype=np.float32)
+        self.look_direction /= np.linalg.norm(self.look_direction)
+        self.look_up = np.array([0,1,0], dtype=np.float32)
+        self.look_up /= np.linalg.norm(self.look_up)
+
+    @property
+    def look_right(self):
+        horizont = -np.cross(self.look_up,self.look_direction)
+        return horizont/np.linalg.norm(horizont)
+
+    def get_view_matrix(self):
+        """
+        Возвращает матрицу вращения дли приведения координт из мировых к координатам на экране.
+        """
+        rotate = np.zeros((4,4), dtype=np.float32)
+        rotate[3,3] = 1
+        rotate[0,:3] = self.look_right
+        rotate[1,:3] = self.look_up
+        rotate[2,:3] = self.look_direction
+        return rotate
+
+    def rotate_field_of_view(self, x=0, y=0, rate=0.001*2*np.pi):
+        self.look_direction, self.look_up = (
+            self.look_direction - x*rate*self.look_right - y*rate*self.look_up,
+            self.look_up + y*rate*self.look_direction
+        )
+        self.normalize()
+
+    def rotate_around(self, x=0, y=0, z=0, rate=0.004*2*np.pi):
+        s,c = np.sin(rate),np.cos(rate)
+        self.look_direction,self.look_up = c*self.look_direction+x*s*self.look_up, -x*s*self.look_direction+c*self.look_up
+        self.look_direction = c*self.look_direction+y*s*self.look_right
+        self.look_up = c*self.look_up+z*s*self.look_right            
+        self.normalize()
+
+    def normalize(self):
+        self.look_direction /= np.linalg.norm(self.look_direction)
+        self.look_up -= np.sum(self.look_direction*self.look_up)*self.look_direction
+        self.look_up /= np.linalg.norm(self.look_up)
 
 
 #####################################################################################################################
@@ -520,8 +585,6 @@ class Application(mglw.WindowConfig):
     window_size = (800, 800) # Размер окна.
     resource_dir = (Path(__file__).parent / 'resources').resolve()
     resizable = True
-    # samples = 8 
-
 
     def __init__(self, **kwargs):
         """
@@ -577,9 +640,18 @@ class Application(mglw.WindowConfig):
         self.sprites_render = None
         self.trail_render = None
 
+        # Создаем камеру
+        self.camera = Camera()
+
     def resize(self, width: int, height: int):
         # print(f"{self.window_size=} {width=} {height=}")
         self.window_size = (width, height)
+
+    def mouse_drag_event(self, x, y, dx, dy):
+        self.camera.rotate_field_of_view(x=dx, y=dy)
+
+    def mouse_scroll_event(self, x_offset: float, y_offset: float):
+        self.camera.rotate_around(z=y_offset)
 
     def update_physics(self):
         """
@@ -620,7 +692,7 @@ class Application(mglw.WindowConfig):
             self.trail_render = TrailRender(ctx=self.ctx)
 
         self.trail_render.update(world=self.world) # Запоминаем положения тел.
-        self.trail_render.render(aspectratio=aspectratio) # Рисуем все траектории.
+        self.trail_render.render(aspectratio=aspectratio,camera=self.camera) # Рисуем все траектории.
         # ВНИМАНИЕ! Рисовать на каждом кадре всю траекторию целиком не оптимально.
         # Лучше рисовать траектории на отдельном framebuffer, который не будет очищаться на каждом кадре.
         # Тогда каждый раз будет достаточно рисовать только последний сегмент траектории, что значительно быстрее,
@@ -635,7 +707,7 @@ class Application(mglw.WindowConfig):
             self.sprites_render = SpriteRender(ctx=self.ctx, texture=texture)
 
         self.sprites_render.update(world=self.world)
-        self.sprites_render.render(aspectratio=aspectratio)
+        self.sprites_render.render(aspectratio=aspectratio,camera=self.camera)
 
 #####################################################################################################################
 
