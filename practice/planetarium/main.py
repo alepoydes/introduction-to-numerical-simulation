@@ -191,7 +191,7 @@ class World:
     однако этот размер никак не влияет на движение тел.  
     """
 
-    def __init__(self, bodies, G=6.6743015E-11):
+    def __init__(self, bodies, G=2.95912208286e-4):
         """
             Создает систему из nbodies тел с указанными параметрами.
             Число тел определяется длинной переданных аргументов.
@@ -246,7 +246,7 @@ class World:
         # names - названия спрайтов
         self.names = list(map(lambda x: x.name, bodies))
 
-    def step(self, dt=1e-3):
+    def step(self, dt=1e0):
         """
         Функция, которую вам нужно переопределить в рамках задания.
         Делает шаг по времени величины dt, обновляя положения и скорости тел согласно уравнениям:
@@ -356,20 +356,26 @@ class SpriteRender:
         self.vao = self.ctx.vertex_array(self.prog, vao_content, self.ibo)
         self.nbodies = 0
 
+        self.center = None
+        self.size = None
+
     def update(self, world):
         """
         Обновляет положения спрайтов согласно состоянию мира.
         """
         self.nbodies = world.nbodies # Реальное число тел в системе.
         self.radius_bo.write(world.radius.astype(np.float32)) # Сохраняем радиусы в буфер.
-        pos = world.state.pos # Массив всех цент тел.
+        pos = world.state.pos # Массив всех центров тел.
         self.pos_bo.write(pos.astype(np.float32)) 
         self.sprite_bo.write(world.sprite.astype(np.int32))
 
-        center = np.mean(pos, axis=0) # Геометрический центр системы.
-        self.u_center.value = tuple(center[:2]) 
-        size = np.max(np.abs(center[None]-pos)) + np.max(world.radius) # Радиус ящика, в который помещается вся система.
-        self.u_size.value = size
+        mass = world.state.mass # Массив масс всех тел.
+        # center = np.mean(pos, axis=0) # Геометрический центр системы.
+        self.center = np.sum(mass[:,None]*pos, axis=0)/np.sum(mass) # Центр масс.
+        self.u_center.value = tuple(self.center[:2]) 
+        # size = np.max(np.abs(center[None]-pos)) + np.max(world.radius) # Радиус ящика, в который помещается вся система.
+        self.size = np.sqrt(np.max(np.sum((self.center[None]-pos)**2,axis=-1))) # Самый большой радиус орбиты. 
+        self.u_size.value = self.size
 
 
     def render(self):
@@ -405,10 +411,44 @@ class Application(mglw.WindowConfig):
         super().__init__(**kwargs)
 
         # Создаем описание Солнечной системы.
+        # Масса в единицах солнечной массы; в массу солнца включены
+        # массы планет внутренней солнечной системы.
+        # Время меряется в земных днях. 
+        # Гравитационная постоянная: G=2.95912208286E-4.
+        # Данные на 5 сентября 1994 года.
+        # Источник: стр. 11, 
         solar_system = [
-            Body(name='Sol', pos=Vector3(0,0,0), vel=Vector3(0,0,0), mass=1, sprite=10, radius=0.1),
-            Body(name='Mars', pos=Vector3(1,0,0), vel=Vector3(0,1,0), mass=.1, sprite=5, radius=0.1),
-            Body(name='Earth', pos=Vector3(0,1,0), vel=Vector3(-1,0,0), mass=.1, sprite=13, radius=0.1),
+            Body(name='Sol', 
+                pos=Vector3(0,0,0), 
+                vel=Vector3(0,0,0), 
+                mass=1.00000597682, 
+                sprite=10),
+            Body(name='Jupiter', 
+                pos=Vector3(-3.5023653, -3.8169847, -1.5507963), 
+                vel=Vector3(0.00565429, -0.00412490, -0.00190589), 
+                mass=0.000954786104043, 
+                sprite=6),
+            Body(name='Saturn', 
+                pos=Vector3(9.0755314,-3.0458353,-1.6483708), 
+                vel=Vector3(0.00168318,0.00483525,0.00192462), 
+                mass=0.000285583733151, 
+                sprite=7),
+            Body(name='Uranus', 
+                pos=Vector3(8.3101120,-16.2901086,-7.2521278), 
+                vel=Vector3(0.00354178,0.00137102,0.00055029), 
+                mass=0.0000437273164546, 
+                sprite=8),
+            Body(name='Neptune', 
+                pos=Vector3(11.4707666,-25.7294829,-10.8169456), 
+                vel=Vector3(0.00288930,0.00114527,0.00039677), 
+                mass=0.0000517759138449, 
+                sprite=9),
+            Body(name='Pluto', 
+                pos=Vector3(-15.5387357,-25.2225594,-3.1902382), 
+                vel=Vector3(0.00276725,-0.00170702,-0.00136504), 
+                mass=1/1.3E8, 
+                sprite=2),
+
         ]
         # создаем симуляцию.
         self.world = World(
