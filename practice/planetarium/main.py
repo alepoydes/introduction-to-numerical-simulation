@@ -154,12 +154,17 @@ class State:
 
 #####################################################################################################################
 
-class DState(State):
+@dataclass
+class DState:
     """
     Класс полностью повторяющий State, однако мы будем хранить в нем скорости изменения 
     координат и скоростей системы.
     Мы вводим класс DState, чтобы например, нельзя было сложить состояние системы с собой, что не имеет смысла.
     """
+
+    pos: np.float32
+    vel: np.float32
+    mass: np.float32
 
     def __add__(self, other):
         if not isinstance(other, DState): return NotImplemented
@@ -245,6 +250,15 @@ class World:
 
         # names - названия спрайтов
         self.names = list(map(lambda x: x.name, bodies))
+    
+    def get_center_and_size(self):
+        pos = self.state.pos
+        mass = self.state.mass # Массив масс всех тел.
+        # center = np.mean(pos, axis=0) # Геометрический центр системы.
+        center = np.sum(mass[:,None]*pos, axis=0)/np.sum(mass) # Центр масс.
+        # size = np.max(np.abs(center[None]-pos)) + np.max(world.radius) # Радиус ящика, в который помещается вся система.
+        size = np.sqrt(np.max(np.sum((center[None]-pos)**2,axis=-1))) # Самый большой радиус орбиты. 
+        return center, size
 
     def step(self, dt=1e1):
         """
@@ -266,16 +280,29 @@ class World:
         self._state = self._state + dstate*dt
         self._t += dt
 
-    def get_center_and_size(self):
-        pos = self.state.pos
-        mass = self.state.mass # Массив масс всех тел.
-        # center = np.mean(pos, axis=0) # Геометрический центр системы.
-        center = np.sum(mass[:,None]*pos, axis=0)/np.sum(mass) # Центр масс.
-        # size = np.max(np.abs(center[None]-pos)) + np.max(world.radius) # Радиус ящика, в который помещается вся система.
-        size = np.sqrt(np.max(np.sum((center[None]-pos)**2,axis=-1))) # Самый большой радиус орбиты. 
-        return center, size
+#####################################################################################################################
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+#####################################################################################################################
+
+# Пример переопределения класса World для создания собственного интегратора.
+# Объект этого класса создается в конструкторе Application.
+# Для выполнения лабораторной вам нужно сделать как можно более быстрый и более точный интегратор. 
+# Подробности смотрите в описании задания [planetarium.md]. 
+
+class MyWorld(World):
+    def step(self, dt=1e2, substeps=100):
+        # Немного улучшим интегратор, так чтобы на один шаг длины dt, который происходит между кадрами отрисовки,
+        # делалось substeps шагов интегратора.
+        subdt = dt/substeps
+        for n in range(substeps):
+            dstate = self._state.rhs(G=self._G)
+            self._state = self._state + dstate*subdt
+            self._t += subdt
 
 #####################################################################################################################
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+#####################################################################################################################
+
 
 class SpriteRender:
     """
@@ -633,7 +660,7 @@ class Application(mglw.WindowConfig):
 
         ]
         # создаем симуляцию.
-        self.world = World(
+        self.world = MyWorld(
             bodies = solar_system
         ) 
         # Резервируем переменные под рендеры, но не создаем их, так как контекст еще не проинициализирован.
